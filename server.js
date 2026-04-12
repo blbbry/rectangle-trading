@@ -11,14 +11,15 @@ app.use(cors())
 app.use(express.json())
 
 app.get("/price", async (req, res) => {
-  const { item } = req.query
+  const { item, condition } = req.query
 
   if (!item) {
     return res.status(400).json({ error: "Item name required" })
   }
 
   try {
-    const url = `https://serpapi.com/search.json?engine=ebay&ebay_domain=ebay.com&_nkw=${encodeURIComponent(item)}&LH_Sold=1&LH_Complete=1&api_key=${process.env.SERPAPI_KEY}`
+    const conditionQuery = condition && condition !== "AI decides" ? ` ${condition}` : ""
+    const url = `https://serpapi.com/search.json?engine=ebay&ebay_domain=ebay.com&_nkw=${encodeURIComponent(item + conditionQuery)}&LH_Sold=1&LH_Complete=1&api_key=${process.env.SERPAPI_KEY}`
 
     const response = await fetch(url)
     const data = await response.json()
