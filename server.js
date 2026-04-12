@@ -18,7 +18,7 @@ app.get("/price", async (req, res) => {
   }
 
   try {
-    const url = `https://serpapi.com/search.json?engine=ebay&ebay_domain=ebay.com&_nkw=${encodeURIComponent(item)}&api_key=${process.env.SERPAPI_KEY}`
+    const url = `https://serpapi.com/search.json?engine=ebay&ebay_domain=ebay.com&_nkw=${encodeURIComponent(item)}&LH_Sold=1&LH_Complete=1&api_key=${process.env.SERPAPI_KEY}`
 
     const response = await fetch(url)
     const data = await response.json()
