@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Momentum Swing Scanner</title>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0d0f14;
+      --panel:      #111520;
+      --border:     #1e2433;
+      --text:       #e2e8f0;
+      --muted:      #64748b;
+      --accent:     #38bdf8;
+      --green:      #4ade80;
+      --green-dim:  #052e16;
+      --amber:      #fbbf24;
+      --amber-dim:  #2d1f08;
+      --red:        #f87171;
+      --purple:     #a78bfa;
+      --ema9-color: #f59e0b;
+      --ema20-color:#a78bfa;
+    }
+
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'SF Mono', 'Fira Code', monospace; }
+
+    /* ── Top bar ── */
+    #topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 44px; padding: 0 1rem;
+      background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    #topbar h1 { font-size: 0.85rem; font-weight: 700; letter-spacing: 0.08em; }
+    #topbar h1 span { color: var(--accent); }
+    #ws-status { font-size: 0.7rem; color: var(--muted); display: flex; align-items: center; gap: 0.4rem; }
+    #ws-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
+    #ws-dot.connected { background: var(--green); }
+    #ws-dot.connecting { background: var(--amber); animation: blink 1s infinite; }
+    #last-scan { font-size: 0.7rem; color: var(--muted); }
+
+    /* ── Layout ── */
+    #layout { display: flex; height: calc(100vh - 44px); }
+
+    /* ── Left: Chart ── */
+    #chart-panel {
+      flex: 0 0 70%; display: flex; flex-direction: column;
+      border-right: 1px solid var(--border); overflow: hidden;
+    }
+    #chart-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.5rem 1rem; background: var(--panel);
+      border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap;
+    }
+    #chart-ticker  { font-size: 1rem; font-weight: 700; color: var(--accent); letter-spacing: 0.05em; }
+    #chart-price   { font-size: 0.85rem; color: var(--text); }
+    #chart-emas    { font-size: 0.7rem; color: var(--muted); display: flex; gap: 0.8rem; }
+    .ema9-label    { color: var(--ema9-color); }
+    .ema20-label   { color: var(--ema20-color); }
+    #chart-signal-badge { margin-left: auto; }
+
+    #chart-container { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+
+    #rsi-toggle {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.35rem 1rem;
+      background: #181e2e;
+      border-top: 1px solid #2e3a52;
+      border-bottom: 1px solid #2e3a52;
+      flex-shrink: 0;
+      font-size: 0.7rem; color: #94a3b8; cursor: pointer; user-select: none;
+      z-index: 10; position: relative;
+    }
+    #rsi-toggle:hover { background: #1e2840; color: var(--text); }
+    #rsi-toggle .arrow { font-size: 0.65rem; transition: transform 0.2s; color: var(--accent); }
+    #rsi-toggle.open .arrow { transform: rotate(180deg); }
+    #rsi-toggle .rsi-label { flex: 1; }
+    #rsi-toggle .rsi-hint { font-size: 0.6rem; color: var(--muted); margin-left: auto; }
+    #rsi-container { flex-shrink: 0; height: 140px; border-top: 1px solid var(--border); position: relative; overflow: hidden; transition: height 0.2s ease; }
+    #rsi-container.collapsed { height: 0; border-top: none; }
+
+    /* ── Right: Signal panel ── */
+    #signal-panel { flex: 0 0 30%; display: flex; flex-direction: column; overflow: hidden; }
+
+    #signal-header {
+      padding: 0.5rem 1rem; background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.7rem; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+    }
+
+    #signal-list { overflow-y: auto; flex: 1; }
+    #signal-list::-webkit-scrollbar { width: 4px; }
+    #signal-list::-webkit-scrollbar-track { background: transparent; }
+    #signal-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── Signal cards ── */
+    .signal-card {
+      padding: 0.65rem 1rem; border-bottom: 1px solid var(--border);
+      cursor: pointer; transition: background 0.1s;
+    }
+    .signal-card:hover { background: #151a27; }
+    .signal-card.active { background: #0f1622; border-left: 2px solid var(--accent); }
+
+    .card-row1 { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.3rem; }
+    .card-ticker { font-size: 0.85rem; font-weight: 700; letter-spacing: 0.05em; display: flex; align-items: center; gap: 0.4rem; }
+    .card-row2 { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+    .card-row3 { display: flex; align-items: center; gap: 0.4rem; }
+    .card-meta  { font-size: 0.68rem; color: var(--muted); }
+
+    /* State badge */
+    .state-badge {
+      padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.65rem; font-weight: 800;
+      letter-spacing: 0.06em; text-align: center; min-width: 58px;
+      transition: background 0.3s, color 0.3s;
+    }
+    .state-none    { background: var(--border); color: var(--muted); border: 1px solid #2a3244; }
+    .state-waiting { background: var(--amber-dim); color: var(--amber); border: 1px solid #b45309; animation: pulse-amber 1.6s ease-in-out infinite; }
+    .state-long    { background: var(--green-dim); color: var(--green); border: 1px solid #16a34a; }
+    .state-long.flash { animation: flash-green 0.6s ease-out; }
+
+    /* Grade badge */
+    .grade-badge {
+      padding: 0.18rem 0.4rem; border-radius: 4px; font-size: 0.65rem; font-weight: 900;
+      letter-spacing: 0.04em; min-width: 30px; text-align: center;
+    }
+    .grade-ap { background: #052e16; color: #4ade80; border: 1px solid #16a34a; }
+    .grade-a  { background: #052e16; color: #86efac; border: 1px solid #166534; }
+    .grade-b  { background: #1c2008; color: #bef264; border: 1px solid #4d7c0f; }
+    .grade-c  { background: var(--amber-dim); color: var(--amber); border: 1px solid #92400e; }
+    .grade-d  { background: #1c1010; color: #f87171; border: 1px solid #7f1d1d; }
+
+    /* Confidence bar */
+    .conf-bar-wrap { flex: 1; height: 4px; background: #1e2433; border-radius: 2px; overflow: hidden; }
+    .conf-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
+    .conf-high   { background: var(--green); }
+    .conf-medium { background: var(--amber); }
+    .conf-low    { background: var(--muted); }
+    .conf-label  { font-size: 0.62rem; color: var(--muted); min-width: 30px; text-align: right; }
+
+    /* Trend dots */
+    .trend-dots { display: flex; gap: 3px; align-items: center; }
+    .trend-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+    .trend-dot.on { background: var(--accent); }
+
+    /* Extension warning */
+    .ext-warn {
+      font-size: 0.6rem; padding: 0.1rem 0.35rem; border-radius: 3px;
+      background: #2d1f08; color: var(--amber); border: 1px solid #92400e;
+    }
+
+    /* Strategy tag */
+    .strat-tag {
+      font-size: 0.62rem; padding: 0.1rem 0.3rem; border-radius: 3px;
+      background: #0a1a2e; color: var(--accent); border: 1px solid #1e3a5f;
+    }
+
+    /* ── Alert log ── */
+    #alert-log-header {
+      padding: 0.4rem 1rem; background: var(--panel);
+      border-top: 1px solid var(--border);
+      font-size: 0.7rem; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; user-select: none;
+    }
+    #alert-log-header:hover { color: var(--text); }
+    #alert-log-header .arrow { transition: transform 0.2s; }
+    #alert-log-header.open .arrow { transform: rotate(180deg); }
+    #alert-list { flex-shrink: 0; max-height: 140px; overflow-y: auto; }
+    #alert-list::-webkit-scrollbar { width: 4px; }
+    #alert-list::-webkit-scrollbar-track { background: transparent; }
+    #alert-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .alert-row {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.3rem 1rem; border-bottom: 1px solid var(--border);
+      font-size: 0.67rem; animation: slide-in 0.2s ease-out;
+    }
+    .alert-row .alert-ticker { font-weight: 700; min-width: 40px; color: var(--text); }
+    .alert-row .alert-grade  { font-size: 0.6rem; font-weight: 900; min-width: 22px; }
+    .alert-row .alert-time   { margin-left: auto; color: var(--muted); font-size: 0.6rem; }
+    .alert-long    { border-left: 2px solid var(--green); }
+    .alert-waiting { border-left: 2px solid var(--amber); }
+    .alert-none    { border-left: 2px solid var(--border); opacity: 0.6; }
+
+    /* ── Market banner ── */
+    #market-banner {
+      display: none; padding: 0.35rem 1rem;
+      background: #1a1310; border-bottom: 1px solid #3d2a0e;
+      font-size: 0.72rem; color: var(--amber); text-align: center;
+    }
+
+    /* ── Toasts ── */
+    #toast-container {
+      position: fixed; top: 52px; right: 12px;
+      display: flex; flex-direction: column; gap: 0.4rem;
+      z-index: 999; pointer-events: none;
+    }
+    .toast {
+      padding: 0.45rem 0.85rem; border-radius: 6px; font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 0.03em; pointer-events: auto; max-width: 230px;
+      animation: toast-in 0.25s ease-out, toast-out 0.3s ease-in 3.7s forwards;
+    }
+    .toast-long    { background: #052e16; color: var(--green); border: 1px solid #16a34a; }
+    .toast-waiting { background: #2d1f08; color: var(--amber); border: 1px solid #b45309; }
+    .toast-none    { background: #1e2433; color: var(--muted);  border: 1px solid var(--border); }
+
+    /* ── Animations ── */
+    @keyframes pulse-amber { 0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,0); } 50% { box-shadow: 0 0 6px 2px rgba(251,191,36,0.25); } }
+    @keyframes flash-green { 0% { box-shadow: 0 0 0 0 rgba(74,222,128,0); background: #14532d; } 30% { box-shadow: 0 0 12px 4px rgba(74,222,128,0.5); background: #166534; } 100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); background: var(--green-dim); } }
+    @keyframes blink { 50% { opacity: 0.4; } }
+    @keyframes slide-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+    @keyframes toast-in  { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+    @keyframes toast-out { to   { opacity: 0; transform: translateX(20px); } }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      #layout { flex-direction: column; overflow-y: auto; height: auto; }
+      #chart-panel { flex: none; height: 60vw; min-height: 300px; border-right: none; border-bottom: 1px solid var(--border); }
+      #signal-panel { flex: none; height: auto; max-height: 50vh; }
+      html, body { overflow: auto; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>Momentum <span>Swing</span> Scanner</h1>
+  <div id="last-scan"></div>
+  <div id="ws-status">
+    <div id="ws-dot" class="connecting"></div>
+    <span id="ws-label">Connecting…</span>
+  </div>
+</div>
+
+<div id="market-banner">⚠ Market closed — daily bars update at close (4:00 PM ET)</div>
+<div id="toast-container"></div>
+
+<div id="layout">
+  <!-- Left: chart -->
+  <div id="chart-panel">
+    <div id="chart-header">
+      <span id="chart-ticker">—</span>
+      <span id="chart-price"></span>
+      <div id="chart-emas">
+        <span class="ema9-label" id="chart-ema9"></span>
+        <span class="ema20-label" id="chart-ema20"></span>
+      </div>
+      <span id="chart-signal-badge"></span>
+    </div>
+    <div id="chart-container"></div>
+    <div id="rsi-toggle" onclick="toggleRSI()">
+      <span class="arrow">▲</span>
+      <span class="rsi-label">RSI Fast (7) &amp; Slow (14)</span>
+      <span class="rsi-hint" id="rsi-hint">click to show</span>
+    </div>
+    <div id="rsi-container"></div>
+  </div>
+
+  <!-- Right: signal panel -->
+  <div id="signal-panel">
+    <div id="signal-header">
+      <span>Swing Setups</span>
+      <span id="long-count" style="color:var(--green)"></span>
+    </div>
+    <div id="signal-list"></div>
+    <div id="alert-log-header" class="open" onclick="toggleAlertLog()">
+      <span>Recent Signals</span>
+      <span class="arrow">▲</span>
+    </div>
+    <div id="alert-list"></div>
+  </div>
+</div>
+
+<script>
+// ─── State ─────────────────────────────────────────────────
+let tickerState  = {}
+let chartData    = {}
+let activeTicker = null
+let mainChart, candleSeries, ema9Series, ema20Series
+let rsiChart, rsiFastSeries, rsiSlowSeries
+let rsiOpen = true
+let wsReconnectDelay = 1000
+
+// ─── WebSocket ──────────────────────────────────────────────
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+  const ws    = new WebSocket(`${proto}://${location.host}/ws`)
+  setWsStatus('connecting')
+
+  ws.onopen = () => { setWsStatus('connected'); wsReconnectDelay = 1000 }
+
+  ws.onmessage = ({ data }) => {
+    const msg = JSON.parse(data)
+
+    if (msg.type === 'snapshot') {
+      tickerState = {}; chartData = {}
+      for (const [ticker, s] of Object.entries(msg.data)) {
+        tickerState[ticker] = s
+        if (s.candles?.length) {
+          chartData[ticker] = { candles: s.candles, ema9: s.ema9, ema20: s.ema20,
+                                rsiFastArr: s.rsiFastArr, rsiSlowArr: s.rsiSlowArr }
+        }
+      }
+      renderSignalList()
+      if (!activeTicker) {
+        const first = Object.keys(tickerState)[0]
+        if (first) selectTicker(first)
+      }
+      updateLastScan()
+    }
+
+    if (msg.type === 'state_change') {
+      const prev = tickerState[msg.ticker]?.state
+      tickerState[msg.ticker] = { ...(tickerState[msg.ticker] || {}), ...msg }
+      updateSignalCard(msg.ticker, prev)
+      if (msg.ticker === activeTicker) updateChartHeader(msg.ticker)
+      updateLongCount()
+      updateLastScan()
+      if (prev !== msg.next) {
+        addAlert(msg.ticker, prev || 'NONE', msg.next, msg.grade, msg.score)
+        showToast(msg.ticker, msg.next, msg.grade, msg.score)
+      }
+    }
+
+    if (msg.type === 'tick_update') {
+      chartData[msg.ticker] = { candles: msg.candles, ema9: msg.ema9, ema20: msg.ema20,
+                                rsiFastArr: msg.rsiFastArr, rsiSlowArr: msg.rsiSlowArr }
+      if (msg.ticker === activeTicker) pushChartUpdate(msg)
+      updateLastScan()
+    }
+  }
+
+  ws.onclose = () => {
+    setWsStatus('disconnected')
+    setTimeout(connect, Math.min(wsReconnectDelay, 30000))
+    wsReconnectDelay = Math.min(wsReconnectDelay * 2, 30000)
+  }
+  ws.onerror = () => ws.close()
+}
+
+function setWsStatus(s) {
+  document.getElementById('ws-dot').className = s
+  document.getElementById('ws-label').textContent =
+    s === 'connected' ? 'Live' : s === 'connecting' ? 'Connecting…' : 'Disconnected'
+}
+
+// ─── Signal list ────────────────────────────────────────────
+function renderSignalList() {
+  const list    = document.getElementById('signal-list')
+  const tickers = Object.keys(tickerState)
+  list.innerHTML = tickers.map(t => signalCardHTML(t)).join('')
+  tickers.forEach(t => document.getElementById(`card-${t}`)?.addEventListener('click', () => selectTicker(t)))
+  updateLongCount()
+}
+
+function gradeClass(grade) {
+  if (!grade) return ''
+  const map = { 'A+': 'grade-ap', A: 'grade-a', B: 'grade-b', C: 'grade-c', D: 'grade-d' }
+  return map[grade] || ''
+}
+
+function confClass(score) {
+  if (score == null) return 'conf-low'
+  return score >= 65 ? 'conf-high' : score >= 50 ? 'conf-medium' : 'conf-low'
+}
+
+function trendDotsHTML(strength) {
+  const s = strength ?? 0
+  return `<div class="trend-dots">${[0,1,2,3].map(j => `<div class="trend-dot${j < s ? ' on' : ''}"></div>`).join('')}</div>`
+}
+
+function signalCardHTML(ticker) {
+  const s     = tickerState[ticker] || {}
+  const state = s.state || 'NONE'
+  const cls   = `state-${state.toLowerCase()}`
+  const stateLabel = state === 'LONG' ? 'MOMENTUM' : state === 'WAITING' ? 'PULLBACK' : 'NONE'
+  const gcls  = gradeClass(s.grade)
+  const grade = s.grade  ? `<span class="grade-badge ${gcls}">${s.grade}</span>` : ''
+  const extW  = s.overextended ? `<span class="ext-warn">! EXT</span>` : ''
+  const strat = s.state !== 'NONE' ? `<span class="strat-tag">Momentum</span>` : ''
+
+  const rsiF  = s.rsiFast != null ? `RSI F${s.rsiFast.toFixed(1)}` : ''
+  const rsiS  = s.rsiSlow != null ? `S${s.rsiSlow.toFixed(1)}` : ''
+  const trend = s.trendStrength != null ? `T${s.trendStrength}/4` : ''
+  const meta  = [rsiF, rsiS, trend].filter(Boolean).join(' · ')
+
+  const score   = s.score ?? 0
+  const ccls    = confClass(s.score)
+  const confBar = s.score != null
+    ? `<div class="conf-bar-wrap"><div class="conf-bar-fill ${ccls}" style="width:${score}%"></div></div><span class="conf-label">${score}</span>`
+    : ''
+
+  return `
+    <div class="signal-card" id="card-${ticker}">
+      <div class="card-row1">
+        <div class="card-ticker">${ticker} ${strat} ${extW}</div>
+        <div class="state-badge ${cls}" id="badge-${ticker}">${stateLabel}</div>
+      </div>
+      <div class="card-row2">
+        ${grade}
+        ${confBar}
+      </div>
+      <div class="card-row3">
+        ${trendDotsHTML(s.trendStrength)}
+        <span class="card-meta">${meta || '&nbsp;'}</span>
+      </div>
+    </div>`
+}
+
+function updateSignalCard(ticker, prevState) {
+  const card = document.getElementById(`card-${ticker}`)
+  if (!card) return
+  const s     = tickerState[ticker] || {}
+  const state = s.state || 'NONE'
+  const badge = document.getElementById(`badge-${ticker}`)
+
+  const stateLabel = state === 'LONG' ? 'MOMENTUM' : state === 'WAITING' ? 'PULLBACK' : 'NONE'
+  badge.className  = `state-badge state-${state.toLowerCase()}`
+  badge.textContent = stateLabel
+
+  if (state === 'LONG' && prevState !== 'LONG') {
+    badge.classList.add('flash')
+    setTimeout(() => badge.classList.remove('flash'), 700)
+  }
+
+  // Re-render the full card to update grade/conf/trend
+  const newCard = document.createElement('div')
+  newCard.innerHTML = signalCardHTML(ticker)
+  const inner = newCard.firstElementChild
+  inner.className = card.className  // preserve active class
+  card.parentNode.replaceChild(inner, card)
+  inner.addEventListener('click', () => selectTicker(ticker))
+}
+
+function updateLongCount() {
+  const count = Object.values(tickerState).filter(s => s.state === 'LONG').length
+  document.getElementById('long-count').textContent = count > 0 ? `${count} LONG` : ''
+}
+
+function updateLastScan() {
+  document.getElementById('last-scan').textContent = `Updated: ${new Date().toLocaleTimeString()}`
+}
+
+// ─── Chart ──────────────────────────────────────────────────
+function initCharts() {
+  const chartEl = document.getElementById('chart-container')
+  const rsiEl   = document.getElementById('rsi-container')
+
+  mainChart = LightweightCharts.createChart(chartEl, {
+    layout:     { background: { color: '#0d0f14' }, textColor: '#64748b' },
+    grid:       { vertLines: { color: '#1e2433' }, horzLines: { color: '#1e2433' } },
+    crosshair:  { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#1e2433' },
+    timeScale:  { borderColor: '#1e2433', timeVisible: true, secondsVisible: false },
+    handleScale: { axisPressedMouseMove: true },
+  })
+
+  candleSeries = mainChart.addCandlestickSeries({
+    upColor: '#4ade80', downColor: '#f87171',
+    borderUpColor: '#4ade80', borderDownColor: '#f87171',
+    wickUpColor: '#4ade80', wickDownColor: '#f87171',
+  })
+
+  // EMA 9 — amber
+  ema9Series = mainChart.addLineSeries({
+    color: '#f59e0b', lineWidth: 1, priceLineVisible: false, lastValueVisible: true, title: 'EMA 9',
+  })
+
+  // EMA 20 — purple
+  ema20Series = mainChart.addLineSeries({
+    color: '#a78bfa', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'EMA 20',
+  })
+
+  rsiChart = LightweightCharts.createChart(rsiEl, {
+    layout:     { background: { color: '#0d0f14' }, textColor: '#64748b' },
+    grid:       { vertLines: { color: '#1e2433' }, horzLines: { color: '#1e2433' } },
+    rightPriceScale: { borderColor: '#1e2433', scaleMargins: { top: 0.1, bottom: 0.1 } },
+    timeScale:  { borderColor: '#1e2433', timeVisible: true, secondsVisible: false },
+    crosshair:  { mode: LightweightCharts.CrosshairMode.Normal },
+    height: 140,
+  })
+
+  rsiFastSeries = rsiChart.addLineSeries({ color: '#fbbf24', lineWidth: 1, title: 'RSI(7)',  priceLineVisible: false })
+  rsiSlowSeries = rsiChart.addLineSeries({ color: '#a78bfa', lineWidth: 1, title: 'RSI(14)', priceLineVisible: false })
+
+  mainChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+    if (range) rsiChart.timeScale().setVisibleLogicalRange(range)
+  })
+
+  const ro = new ResizeObserver(() => {
+    const w = chartEl.offsetWidth, h = chartEl.offsetHeight
+    if (w > 0 && h > 0) mainChart.resize(w, h)
+    const rw = rsiEl.offsetWidth, rh = rsiEl.offsetHeight
+    if (rw > 0 && rh > 0) rsiChart.resize(rw, rh)
+  })
+  ro.observe(chartEl)
+  ro.observe(rsiEl)
+}
+
+function selectTicker(ticker) {
+  activeTicker = ticker
+  document.querySelectorAll('.signal-card').forEach(c => c.classList.remove('active'))
+  document.getElementById(`card-${ticker}`)?.classList.add('active')
+  updateChartHeader(ticker)
+  loadChartData(ticker)
+}
+
+function updateChartHeader(ticker) {
+  const s   = tickerState[ticker] || {}
+  const d   = chartData[ticker]
+  const n   = d?.candles?.length ?? 0
+
+  document.getElementById('chart-ticker').textContent = ticker
+
+  if (n > 0) {
+    const last = d.candles[n - 1]
+    document.getElementById('chart-price').textContent = `$${last.close.toFixed(2)}`
+  }
+
+  // EMA values
+  const ema9El  = document.getElementById('chart-ema9')
+  const ema20El = document.getElementById('chart-ema20')
+  if (d?.ema9 && n > 0) {
+    const v9 = d.ema9[n - 1]
+    ema9El.textContent  = v9  != null ? `EMA9 $${v9.toFixed(2)}`   : ''
+  }
+  if (d?.ema20 && n > 0) {
+    const v20 = d.ema20[n - 1]
+    ema20El.textContent = v20 != null ? `EMA20 $${v20.toFixed(2)}` : ''
+  }
+
+  const state = s.state || 'NONE'
+  const gcls  = gradeClass(s.grade)
+  const gradeHTML = s.grade ? `<span class="grade-badge ${gcls}">${s.grade}</span> ` : ''
+  document.getElementById('chart-signal-badge').innerHTML =
+    `${gradeHTML}<span class="state-badge state-${state.toLowerCase()}">${state}</span>`
+}
+
+function loadChartData(ticker) {
+  const d = chartData[ticker]
+  if (!d || !d.candles?.length) {
+    candleSeries.setData([]); ema9Series.setData([]); ema20Series.setData([])
+    rsiFastSeries.setData([]); rsiSlowSeries.setData([])
+    return
+  }
+  setChartData(d)
+}
+
+function setChartData(d) {
+  const { candles, ema9, ema20, rsiFastArr, rsiSlowArr } = d
+
+  const toTime = ts => {
+    const t = ts instanceof Date ? ts : new Date(ts)
+    return Math.floor(t.getTime() / 1000)
+  }
+
+  const ohlcv = candles.map(c => ({
+    time: toTime(c.timestamp), open: c.open, high: c.high, low: c.low, close: c.close
+  }))
+
+  const ema9Line = candles
+    .map((c, i) => ema9[i] != null ? { time: toTime(c.timestamp), value: ema9[i] } : null)
+    .filter(Boolean)
+
+  const ema20Line = candles
+    .map((c, i) => ema20[i] != null ? { time: toTime(c.timestamp), value: ema20[i] } : null)
+    .filter(Boolean)
+
+  const rsiFastLine = candles
+    .map((c, i) => rsiFastArr[i] != null ? { time: toTime(c.timestamp), value: rsiFastArr[i] } : null)
+    .filter(Boolean)
+
+  const rsiSlowLine = candles
+    .map((c, i) => rsiSlowArr[i] != null ? { time: toTime(c.timestamp), value: rsiSlowArr[i] } : null)
+    .filter(Boolean)
+
+  candleSeries.setData(ohlcv)
+  ema9Series.setData(ema9Line)
+  ema20Series.setData(ema20Line)
+  rsiFastSeries.setData(rsiFastLine)
+  rsiSlowSeries.setData(rsiSlowLine)
+  mainChart.timeScale().fitContent()
+  rsiChart.timeScale().fitContent()
+}
+
+function pushChartUpdate(msg) {
+  setChartData({ candles: msg.candles, ema9: msg.ema9, ema20: msg.ema20,
+                 rsiFastArr: msg.rsiFastArr, rsiSlowArr: msg.rsiSlowArr })
+  updateChartHeader(activeTicker)
+}
+
+// ─── RSI toggle ─────────────────────────────────────────────
+function toggleRSI() {
+  rsiOpen = !rsiOpen
+  const rsiEl   = document.getElementById('rsi-container')
+  const chartEl = document.getElementById('chart-container')
+  rsiEl.classList.toggle('collapsed', !rsiOpen)
+  document.getElementById('rsi-toggle').classList.toggle('open', rsiOpen)
+  document.getElementById('rsi-hint').textContent = rsiOpen ? 'click to hide' : 'click to show'
+  // Resize main chart on next frame (layout has already shifted)
+  requestAnimationFrame(() => {
+    if (chartEl.offsetWidth && chartEl.offsetHeight)
+      mainChart.resize(chartEl.offsetWidth, chartEl.offsetHeight)
+  })
+  // Resize RSI chart only after the 200ms CSS height transition finishes;
+  // reading offsetHeight mid-transition gives ~0 and breaks the chart render.
+  if (rsiOpen) {
+    const onEnd = () => {
+      rsiEl.removeEventListener('transitionend', onEnd)
+      if (rsiEl.offsetWidth && rsiEl.offsetHeight)
+        rsiChart.resize(rsiEl.offsetWidth, rsiEl.offsetHeight)
+    }
+    rsiEl.addEventListener('transitionend', onEnd)
+  }
+}
+
+// ─── Alert log ──────────────────────────────────────────────
+let alertLogOpen = true
+function toggleAlertLog() {
+  alertLogOpen = !alertLogOpen
+  document.getElementById('alert-list').style.display = alertLogOpen ? '' : 'none'
+  document.getElementById('alert-log-header').classList.toggle('open', alertLogOpen)
+}
+
+function addAlert(ticker, prev, next, grade, score) {
+  const list      = document.getElementById('alert-list')
+  const stateCol  = next === 'LONG' ? 'var(--green)' : next === 'WAITING' ? 'var(--amber)' : 'var(--muted)'
+  const stateStr  = next === 'LONG' ? 'MOMENTUM' : next === 'WAITING' ? 'PULLBACK' : 'NONE'
+  const gradeHTML = grade ? `<span class="alert-grade ${gradeClass(grade)}">${grade}</span>` : ''
+  const scoreStr  = score != null ? `<span style="color:var(--muted);font-size:0.6rem">${score}</span>` : ''
+  const cls       = next === 'LONG' ? 'alert-long' : next === 'WAITING' ? 'alert-waiting' : 'alert-none'
+  const time      = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+  const row       = document.createElement('div')
+  row.className   = `alert-row ${cls}`
+  row.innerHTML   = `<span class="alert-ticker">${ticker}</span><span style="color:${stateCol}">${stateStr}</span>${gradeHTML}${scoreStr}<span class="alert-time">${time}</span>`
+  list.prepend(row)
+  while (list.children.length > 50) list.removeChild(list.lastChild)
+}
+
+function showToast(ticker, next, grade, score) {
+  const container = document.getElementById('toast-container')
+  const cls       = next === 'LONG' ? 'toast-long' : next === 'WAITING' ? 'toast-waiting' : 'toast-none'
+  const icon      = next === 'LONG' ? '📈' : next === 'WAITING' ? '🔍' : '○'
+  const label     = next === 'LONG' ? 'Momentum Restart' : next === 'WAITING' ? 'Pullback Forming' : 'Setup Cleared'
+  const gradeStr  = grade ? ` [${grade}${score != null ? ' ' + score : ''}]` : ''
+  const toast     = document.createElement('div')
+  toast.className = `toast ${cls}`
+  toast.textContent = `${icon} ${ticker}${gradeStr} — ${label}`
+  container.appendChild(toast)
+  setTimeout(() => toast.remove(), 4100)
+}
+
+// ─── Market hours banner ─────────────────────────────────────
+function checkMarketHours() {
+  const now      = new Date()
+  const utcH     = now.getUTCHours(), utcM = now.getUTCMinutes()
+  const afterOpen  = utcH > 13 || (utcH === 13 && utcM >= 30)
+  const beforeClose = utcH < 21
+  const open     = afterOpen && beforeClose
+  const isWeekday = now.getUTCDay() >= 1 && now.getUTCDay() <= 5
+  document.getElementById('market-banner').style.display = (open && isWeekday) ? 'none' : 'block'
+}
+
+// ─── Boot ────────────────────────────────────────────────────
+initCharts()
+connect()
+checkMarketHours()
+setInterval(checkMarketHours, 60_000)
+document.getElementById('rsi-toggle').classList.add('open')
+document.getElementById('rsi-hint').textContent = 'click to hide'
+</script>
+</body>
+</html>

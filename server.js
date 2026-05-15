@@ -1,7 +1,13 @@
+import { createServer } from 'http'
 import express from "express"
 import cors from "cors"
 import fetch from "node-fetch"
 import dotenv from "dotenv"
+import scannerRouter from "./routes/scanner.js"
+import { ScannerEngine } from "./engine/scannerEngine.js"
+import { createWsServer } from "./engine/wsServer.js"
+import { startEmailService } from "./engine/emailService.js"
+import { DEFAULT_TICKERS } from "./config/tickers.js"
 
 dotenv.config()
 console.log("SERPAPI_KEY:", process.env.SERPAPI_KEY)
@@ -9,6 +15,10 @@ console.log("SERPAPI_KEY:", process.env.SERPAPI_KEY)
 const app = express()
 app.use(cors())
 app.use(express.json())
+app.use(express.static('public'))
+app.use(scannerRouter)
+
+app.get("/health", (req, res) => res.json({ status: "ok" }))
 
 app.get("/price", async (req, res) => {
   const { item, condition } = req.query
@@ -51,4 +61,11 @@ app.get("/price", async (req, res) => {
 })
 
 const PORT = process.env.PORT || 3001
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`))
+const httpServer = createServer(app)
+
+const engine = new ScannerEngine(DEFAULT_TICKERS)
+createWsServer(httpServer, engine)
+startEmailService(engine)
+engine.start()
+
+httpServer.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`))

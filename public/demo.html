@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VWAP + RSI Scanner — Demo</title>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d0f14; --panel: #111520; --border: #1e2433;
+      --text: #e2e8f0; --muted: #64748b; --accent: #38bdf8;
+      --green: #4ade80; --green-dim: #052e16;
+      --amber: #fbbf24; --amber-dim: #2d1f08;
+      --red: #f87171;
+    }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'SF Mono','Fira Code',monospace; }
+
+    #demo-banner {
+      background: #1a1f10; border-bottom: 1px solid #3a5c1a;
+      color: #a3e635; font-size: 0.72rem; text-align: center;
+      padding: 0.3rem; letter-spacing: 0.06em;
+    }
+
+    #topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 44px; padding: 0 1rem;
+      background: var(--panel); border-bottom: 1px solid var(--border);
+    }
+    #topbar h1 { font-size: 0.85rem; font-weight: 700; letter-spacing: 0.08em; }
+    #topbar h1 span { color: var(--accent); }
+    #ws-status { font-size: 0.7rem; color: var(--muted); display: flex; align-items: center; gap: 0.4rem; }
+    #ws-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    #last-scan { font-size: 0.7rem; color: var(--muted); }
+
+    #layout { display: flex; height: calc(100vh - 72px); }
+
+    #chart-panel {
+      flex: 0 0 70%; display: flex; flex-direction: column;
+      border-right: 1px solid var(--border); overflow: hidden;
+    }
+    #chart-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.5rem 1rem; background: var(--panel);
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    #chart-ticker { font-size: 1rem; font-weight: 700; color: var(--accent); letter-spacing: 0.05em; }
+    #chart-price  { font-size: 0.9rem; color: var(--text); }
+    #chart-change { font-size: 0.8rem; }
+    #chart-signal-badge { margin-left: auto; }
+    #chart-container { flex: 1; min-height: 0; }
+    #rsi-toggle {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.3rem 1rem; background: var(--panel);
+      border-top: 1px solid var(--border); flex-shrink: 0;
+      font-size: 0.7rem; color: var(--muted); cursor: pointer; user-select: none;
+    }
+    #rsi-toggle .arrow { transition: transform 0.2s; }
+    #rsi-toggle.open .arrow { transform: rotate(180deg); }
+    #rsi-container { flex-shrink: 0; height: 130px; border-top: 1px solid var(--border); position: relative; }
+
+    #signal-panel { flex: 0 0 30%; display: flex; flex-direction: column; overflow: hidden; }
+    #signal-header {
+      padding: 0.5rem 1rem; background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.7rem; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    #signal-list { overflow-y: auto; flex: 1; }
+    #signal-list::-webkit-scrollbar { width: 4px; }
+    #signal-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .signal-card {
+      display: grid; grid-template-columns: 1fr auto;
+      align-items: center; gap: 0.5rem;
+      padding: 0.65rem 1rem; border-bottom: 1px solid var(--border);
+      cursor: pointer; transition: background 0.1s;
+    }
+    .signal-card:hover { background: #151a27; }
+    .signal-card.active { background: #0f1622; border-left: 2px solid var(--accent); }
+    .card-left { display: flex; flex-direction: column; gap: 0.2rem; }
+    .card-ticker { font-size: 0.85rem; font-weight: 700; letter-spacing: 0.05em; }
+    .card-meta   { font-size: 0.7rem; color: var(--muted); }
+
+    .state-badge {
+      padding: 0.25rem 0.55rem; border-radius: 5px;
+      font-size: 0.68rem; font-weight: 800; letter-spacing: 0.07em;
+      text-align: center; min-width: 62px;
+    }
+    .state-none    { background: var(--border); color: var(--muted); border: 1px solid #2a3244; }
+    .state-waiting { background: var(--amber-dim); color: var(--amber); border: 1px solid #b45309; animation: pulse-amber 1.6s ease-in-out infinite; }
+    .state-long    { background: var(--green-dim); color: var(--green); border: 1px solid #16a34a; animation: flash-green 0.8s ease-out forwards; }
+    .strat-tag { font-size: 0.65rem; padding: 0.1rem 0.35rem; border-radius: 3px; background: #0c2a1a; color: var(--green); border: 1px solid #166534; }
+
+    @keyframes pulse-amber {
+      0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,0); }
+      50%      { box-shadow: 0 0 6px 2px rgba(251,191,36,0.25); }
+    }
+    @keyframes flash-green {
+      0%   { box-shadow: 0 0 0 0 rgba(74,222,128,0); background: #14532d; }
+      40%  { box-shadow: 0 0 16px 5px rgba(74,222,128,0.45); background: #166534; }
+      100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); background: var(--green-dim); }
+    }
+  </style>
+</head>
+<body>
+
+<div id="demo-banner">⚡ DEMO MODE — Simulated market data for illustration purposes</div>
+
+<div id="topbar">
+  <h1>VWAP + <span>RSI</span> Scanner</h1>
+  <div id="last-scan">Last update: 10:42:17 AM</div>
+  <div id="ws-status">
+    <div id="ws-dot"></div>
+    <span>Live</span>
+  </div>
+</div>
+
+<div id="layout">
+  <div id="chart-panel">
+    <div id="chart-header">
+      <span id="chart-ticker">SPIR</span>
+      <span id="chart-price">$2.84</span>
+      <span id="chart-change" style="color:var(--green)">+4.41%</span>
+      <span id="chart-signal-badge">
+        <span class="state-badge state-long">LONG S-A</span>
+      </span>
+    </div>
+    <div id="chart-container"></div>
+    <div id="rsi-toggle" class="open" onclick="toggleRSI()">
+      <span class="arrow">▲</span>
+      RSI Fast (7) &amp; Slow (14)
+    </div>
+    <div id="rsi-container"></div>
+  </div>
+
+  <div id="signal-panel">
+    <div id="signal-header">
+      <span>Signal Engine</span>
+      <span style="color:var(--green)">2 LONG</span>
+    </div>
+    <div id="signal-list"></div>
+  </div>
+</div>
+
+<script>
+// ── Generate realistic 5-min candle data ─────────────────────────────────
+function generateSession(startPrice, drift, volatility, count, seed) {
+  let price = startPrice
+  let rng = seed
+  const lcg = () => { rng = (rng * 1664525 + 1013904223) & 0xffffffff; return (rng >>> 0) / 0xffffffff }
+
+  const candles = []
+  // Session start: 9:30 AM ET today
+  const now = new Date()
+  const base = new Date(now)
+  base.setUTCHours(13, 30, 0, 0)
+  // If already past that today, use today; otherwise use same day
+  // Use a fixed date for demo stability: May 14 2026
+  base.setUTCFullYear(2026, 4, 14)
+
+  let cumTPV = 0, cumVol = 0
+
+  for (let i = 0; i < count; i++) {
+    const open  = price
+    const move  = (lcg() - 0.48 + drift) * volatility
+    const close = Math.max(open * (1 + move), 0.01)
+    const wick  = volatility * 0.6
+    const high  = Math.max(open, close) * (1 + lcg() * wick)
+    const low   = Math.min(open, close) * (1 - lcg() * wick)
+    const vol   = Math.floor(50000 + lcg() * 300000)
+    const ts    = new Date(base.getTime() + i * 5 * 60 * 1000)
+    const tp    = (high + low + close) / 3
+    cumTPV += tp * vol
+    cumVol += vol
+    candles.push({ time: Math.floor(ts.getTime()/1000), open, high, low, close, volume: vol, vwap: cumTPV/cumVol })
+    price = close
+  }
+  return candles
+}
+
+// ── RSI calculation ───────────────────────────────────────────────────────
+function calcRSI(closes, len) {
+  if (closes.length < len + 2) return []
+  const ch = closes.map((c,i) => i === 0 ? 0 : c - closes[i-1]).slice(1)
+  let ag = 0, al = 0
+  for (let i = 0; i < len; i++) { ag += Math.max(ch[i],0); al += Math.abs(Math.min(ch[i],0)) }
+  ag /= len; al /= len
+  const out = []
+  for (let i = len; i < ch.length; i++) {
+    ag = (ag*(len-1) + Math.max(ch[i],0))/len
+    al = (al*(len-1) + Math.abs(Math.min(ch[i],0)))/len
+    out.push(al === 0 ? 100 : 100 - 100/(1 + ag/al))
+  }
+  return out
+}
+
+// ── Ticker scenarios ──────────────────────────────────────────────────────
+// SPIR: strong uptrend, pulled back to VWAP ~candle 35, RSI crossed → LONG
+const spirCandles = generateSession(2.72, 0.003, 0.018, 48, 42)
+// Manually shape SPIR: dip to VWAP zone around candle 38-42, then reclaim
+;(function shapeSpir() {
+  const vwapAt38 = spirCandles[37].vwap
+  for (let i = 36; i < 43; i++) {
+    const ratio = 1 + (i - 39) * 0.002
+    spirCandles[i].close = vwapAt38 * ratio
+    spirCandles[i].open  = vwapAt38 * (ratio - 0.003)
+    spirCandles[i].high  = spirCandles[i].close * 1.004
+    spirCandles[i].low   = spirCandles[i].open  * 0.997
+  }
+  // Last few candles: bullish reclaim
+  for (let i = 43; i < 48; i++) {
+    spirCandles[i].close = vwapAt38 * (1.002 + (i-43)*0.003)
+    spirCandles[i].open  = spirCandles[i-1].close
+    spirCandles[i].high  = spirCandles[i].close * 1.005
+    spirCandles[i].low   = spirCandles[i].open  * 0.998
+  }
+})()
+
+const imppCandles  = generateSession(0.41, 0.001, 0.022, 48, 77)
+const bcrxCandles  = generateSession(4.15, 0.002, 0.015, 48, 93)
+const sntiCandles  = generateSession(8.20, 0.004, 0.012, 48, 11)
+const fcelCandles  = generateSession(0.78, -0.001, 0.020, 48, 55)
+const clneCandles  = generateSession(1.34, 0.000, 0.016, 48, 29)
+const ocgnCandles  = generateSession(0.62, 0.002, 0.019, 48, 66)
+const nrgvCandles  = generateSession(3.70, 0.001, 0.014, 48, 18)
+
+const chartDataMap = {
+  SPIR: spirCandles, IMPP: imppCandles, BCRX: bcrxCandles,
+  SNTI: sntiCandles, FCEL: fcelCandles, CLNE: clneCandles,
+  OCGN: ocgnCandles, NRGV: nrgvCandles,
+}
+
+// ── Signal states (simulated for demo) ───────────────────────────────────
+const signalStates = [
+  { ticker:'SPIR',  state:'LONG',    strategy:'A', rsiFast:58.4,  rsiSlow:51.2, vwapDist: 0.412 },
+  { ticker:'SNTI',  state:'LONG',    strategy:'A', rsiFast:61.1,  rsiSlow:53.8, vwapDist: 0.188 },
+  { ticker:'IMPP',  state:'WAITING', strategy:'B', rsiFast:42.3,  rsiSlow:44.7, vwapDist:-0.621 },
+  { ticker:'BCRX',  state:'WAITING', strategy:'B', rsiFast:48.9,  rsiSlow:47.1, vwapDist:-0.390 },
+  { ticker:'NRGV',  state:'WAITING', strategy:'A', rsiFast:38.7,  rsiSlow:45.2, vwapDist: 1.201 },
+  { ticker:'OCGN',  state:'NONE',    strategy:null, rsiFast:65.2, rsiSlow:57.8, vwapDist: 0.732 },
+  { ticker:'FCEL',  state:'NONE',    strategy:null, rsiFast:68.4, rsiSlow:67.7, vwapDist: 7.951 },
+  { ticker:'CLNE',  state:'NONE',    strategy:null, rsiFast:25.8, rsiSlow:35.4, vwapDist:-0.661 },
+  { ticker:'SIDU',  state:'NONE',    strategy:null, rsiFast:47.5, rsiSlow:48.2, vwapDist: 2.807 },
+  { ticker:'MNTS',  state:'NONE',    strategy:null, rsiFast:22.9, rsiSlow:28.1, vwapDist:-5.889 },
+  { ticker:'RDW',   state:'NONE',    strategy:null, rsiFast:55.4, rsiSlow:50.3, vwapDist: 3.518 },
+  { ticker:'NVVE',  state:'NONE',    strategy:null, rsiFast:55.1, rsiSlow:52.6, vwapDist:-0.596 },
+  { ticker:'TGEN',  state:'NONE',    strategy:null, rsiFast:60.5, rsiSlow:57.0, vwapDist: 4.340 },
+  { ticker:'EVC',   state:'NONE',    strategy:null, rsiFast:35.6, rsiSlow:34.3, vwapDist:-2.192 },
+  { ticker:'TOP',   state:'NONE',    strategy:null, rsiFast:44.1, rsiSlow:46.8, vwapDist:-1.100 },
+  { ticker:'TLS',   state:'NONE',    strategy:null, rsiFast:51.2, rsiSlow:49.4, vwapDist: 0.210 },
+]
+
+// ── Render signal panel ───────────────────────────────────────────────────
+const list = document.getElementById('signal-list')
+list.innerHTML = signalStates.map(s => {
+  const cls   = `state-${s.state.toLowerCase()}`
+  const label = s.state
+  const strat = s.strategy ? `<span class="strat-tag">S-${s.strategy}</span>` : ''
+  const meta  = `F ${s.rsiFast.toFixed(1)} · S ${s.rsiSlow.toFixed(1)} · Δ${s.vwapDist.toFixed(2)}%`
+  return `
+    <div class="signal-card${s.ticker==='SPIR'?' active':''}" onclick="loadChart('${s.ticker}')">
+      <div class="card-left">
+        <div class="card-ticker">${s.ticker} ${strat}</div>
+        <div class="card-meta">${meta}</div>
+      </div>
+      <div class="state-badge ${cls}">${label}</div>
+    </div>`
+}).join('')
+
+// ── Charts ────────────────────────────────────────────────────────────────
+const chartEl = document.getElementById('chart-container')
+const rsiEl   = document.getElementById('rsi-container')
+
+const mainChart = LightweightCharts.createChart(chartEl, {
+  layout:    { background: { color: '#0d0f14' }, textColor: '#64748b' },
+  grid:      { vertLines: { color: '#1e2433' }, horzLines: { color: '#1e2433' } },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  rightPriceScale: { borderColor: '#1e2433' },
+  timeScale: { borderColor: '#1e2433', timeVisible: true, secondsVisible: false },
+})
+
+const candleSeries = mainChart.addCandlestickSeries({
+  upColor: '#4ade80', downColor: '#f87171',
+  borderUpColor: '#4ade80', borderDownColor: '#f87171',
+  wickUpColor: '#4ade80', wickDownColor: '#f87171',
+})
+const vwapSeries = mainChart.addLineSeries({
+  color: '#38bdf8', lineWidth: 2, priceLineVisible: false, title: 'VWAP',
+})
+
+const rsiChart = LightweightCharts.createChart(rsiEl, {
+  layout:    { background: { color: '#0d0f14' }, textColor: '#64748b' },
+  grid:      { vertLines: { color: '#1e2433' }, horzLines: { color: '#1e2433' } },
+  rightPriceScale: { borderColor: '#1e2433', scaleMargins: { top: 0.1, bottom: 0.1 } },
+  timeScale: { borderColor: '#1e2433', timeVisible: true, secondsVisible: false },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  height: 130,
+})
+const rsiFastLine = rsiChart.addLineSeries({ color: '#fbbf24', lineWidth: 1, title: 'RSI(7)',  priceLineVisible: false })
+const rsiSlowLine = rsiChart.addLineSeries({ color: '#a78bfa', lineWidth: 1, title: 'RSI(14)', priceLineVisible: false })
+// 50 level
+const rsi50Line   = rsiChart.addLineSeries({ color: '#2d3748', lineWidth: 1, lineStyle: 1, priceLineVisible: false, lastValueVisible: false })
+
+// Sync crosshair
+mainChart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r) rsiChart.timeScale().setVisibleLogicalRange(r) })
+
+const ro = new ResizeObserver(() => {
+  const w = chartEl.offsetWidth, h = chartEl.offsetHeight
+  if (w && h) mainChart.resize(w, h)
+  if (rsiEl.offsetWidth && rsiEl.offsetHeight) rsiChart.resize(rsiEl.offsetWidth, rsiEl.offsetHeight)
+})
+ro.observe(chartEl)
+ro.observe(rsiEl)
+
+function loadChart(ticker) {
+  const candles = chartDataMap[ticker]
+  if (!candles) return
+
+  const ohlcv    = candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }))
+  const vwapData = candles.map(c => ({ time: c.time, value: c.vwap }))
+  const closes   = candles.map(c => c.close)
+  const fast     = calcRSI(closes, 7)
+  const slow     = calcRSI(closes, 14)
+  const offset   = 15
+  const rsiTimes = candles.slice(offset).map(c => c.time)
+
+  const fastData = rsiTimes.map((t, i) => fast[i] != null ? { time: t, value: fast[i] } : null).filter(Boolean)
+  const slowData = rsiTimes.map((t, i) => slow[i] != null ? { time: t, value: slow[i] } : null).filter(Boolean)
+  const l50Data  = candles.map(c => ({ time: c.time, value: 50 }))
+
+  // Add LONG signal marker for SPIR at candle 43
+  if (ticker === 'SPIR') {
+    candleSeries.setData(ohlcv)
+    candleSeries.setMarkers([{
+      time:     candles[43].time,
+      position: 'belowBar',
+      color:    '#4ade80',
+      shape:    'arrowUp',
+      text:     'LONG',
+    }])
+  } else {
+    candleSeries.setData(ohlcv)
+    candleSeries.setMarkers([])
+  }
+
+  vwapSeries.setData(vwapData)
+  rsiFastLine.setData(fastData)
+  rsiSlowLine.setData(slowData)
+  rsi50Line.setData(l50Data)
+  mainChart.timeScale().fitContent()
+  rsiChart.timeScale().fitContent()
+
+  // Update header
+  const last = candles[candles.length - 1]
+  const first = candles[0]
+  const chg   = ((last.close - first.open) / first.open * 100)
+  document.getElementById('chart-ticker').textContent = ticker
+  document.getElementById('chart-price').textContent  = `$${last.close.toFixed(4)}`
+  const chgEl = document.getElementById('chart-change')
+  chgEl.textContent  = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`
+  chgEl.style.color  = chg >= 0 ? 'var(--green)' : 'var(--red)'
+
+  const s     = signalStates.find(x => x.ticker === ticker)
+  const state = s?.state || 'NONE'
+  const strat = s?.strategy ? ` S-${s.strategy}` : ''
+  document.getElementById('chart-signal-badge').innerHTML =
+    `<span class="state-badge state-${state.toLowerCase()}">${state}${strat}</span>`
+
+  // Active card
+  document.querySelectorAll('.signal-card').forEach(c => c.classList.remove('active'))
+  document.querySelectorAll('.signal-card').forEach(c => {
+    if (c.querySelector('.card-ticker').textContent.startsWith(ticker)) c.classList.add('active')
+  })
+}
+
+function toggleRSI() {
+  const rsi = document.getElementById('rsi-container')
+  const tog = document.getElementById('rsi-toggle')
+  const hidden = rsi.style.display === 'none'
+  rsi.style.display = hidden ? '' : 'none'
+  tog.classList.toggle('open', hidden)
+  setTimeout(() => { const w = chartEl.offsetWidth, h = chartEl.offsetHeight; if (w&&h) mainChart.resize(w,h) }, 50)
+}
+
+loadChart('SPIR')
+</script>
+</body>
+</html>
