@@ -157,6 +157,7 @@ export class RectangleEngine extends EventEmitter {
           rectangle:            dailyRect,
           fsm:                  nextState.fsm,
           lastProcessedCandleTs: nextState.lastProcessedCandleTs,
+          candles:              candles15m.slice(-200),
         })
       }
 
@@ -181,6 +182,7 @@ export class RectangleEngine extends EventEmitter {
             rectangle:            weeklyRect,
             fsm:                  nextState.fsm,
             lastProcessedCandleTs: nextState.lastProcessedCandleTs,
+            candles:              candles30m.slice(-200),
           })
         }
       }

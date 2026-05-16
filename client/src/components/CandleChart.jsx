@@ -58,14 +58,17 @@ function PriceGrid({ priceMin, priceMax, chartH, chartW }) {
 }
 
 // ─── Main component ──────────────────────────────────────────────────────────
-export default function CandleChart({ candles = [], ema9 = [], ema20 = [], daily, weekly }) {
+export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [], ema20 = [], daily, weekly }) {
   const containerRef  = useRef(null)
   const [dims, setDims] = useState({ w: 800, h: 420 })
   const [visibleEnd, setVisibleEnd]     = useState(null)  // null = latest
   const [visibleCount, setVisibleCount] = useState(DEFAULT_VISIBLE)
   const [showDaily,  setShowDaily]  = useState(true)
-  const [showWeekly, setShowWeekly] = useState(true)
+  const [showWeekly, setShowWeekly] = useState(false)  // weekly off by default (30m = many bars)
   const [showEma,    setShowEma]    = useState(true)
+
+  // Active candle series: 30m when only weekly is shown, otherwise 15m
+  const candles = (!showDaily && showWeekly && candles30m.length) ? candles30m : candles15m
 
   // Measure container
   useEffect(() => {
@@ -80,6 +83,10 @@ export default function CandleChart({ candles = [], ema9 = [], ema20 = [], daily
 
   const chartW = dims.w - PRICE_AXIS_W
   const chartH = dims.h - TIME_AXIS_H
+
+  // Reset visible window when candle series changes
+  const candleLen = candles.length
+  useEffect(() => { setVisibleEnd(null) }, [candleLen])
 
   // Slice visible candles
   const visible = useMemo(() => {
@@ -132,7 +139,7 @@ export default function CandleChart({ candles = [], ema9 = [], ema20 = [], daily
   function onWheel(e) {
     e.preventDefault()
     const delta = e.deltaY > 0 ? 10 : -10
-    setVisibleCount((n) => clamp(n + delta, 10, candles.length))
+    setVisibleCount((n) => clamp(n + delta, 10, Math.max(candles.length, 10)))
   }
 
   // Time axis labels (show ~6 evenly spaced)
@@ -185,7 +192,9 @@ export default function CandleChart({ candles = [], ema9 = [], ema20 = [], daily
             {label}
           </button>
         ))}
-        <span className="text-[10px] text-gray-600 ml-1 self-center">scroll to zoom</span>
+        <span className="text-[10px] text-gray-600 ml-1 self-center">
+          {(!showDaily && showWeekly) ? '30m' : '15m'} · scroll to zoom
+        </span>
       </div>
 
       {!candles.length && !daily?.rectangle && !weekly?.rectangle ? (

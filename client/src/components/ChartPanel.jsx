@@ -41,10 +41,11 @@ export default function ChartPanel() {
         )}
       </div>
 
-      {/* Candlestick chart */}
+      {/* Candlestick chart — 15m for daily zone, 30m for weekly */}
       <div className="flex-1 min-h-0 rounded border border-gray-800 overflow-hidden">
         <CandleChart
-          candles={tickerState?.candles ?? []}
+          candles15m={tickerState?.candles15m ?? []}
+          candles30m={tickerState?.candles30m ?? []}
           ema9={tickerState?.ema9 ?? []}
           ema20={tickerState?.ema20 ?? []}
           daily={daily}

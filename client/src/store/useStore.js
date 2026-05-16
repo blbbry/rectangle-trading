@@ -58,16 +58,20 @@ const useStore = create((set, get) => ({
     }
 
     if (type === 'rectangle_tick') {
-      const { ticker, timeframe, rectangle, fsm, lastProcessedCandleTs } = payload
+      const { ticker, timeframe, rectangle, fsm, lastProcessedCandleTs, candles } = payload
       if (!ticker || !timeframe) return
       const key = tfKey(timeframe)
       set((state) => {
         const existing = state.tickers[ticker] ?? { daily: null, weekly: null }
+        // Store candles keyed by timeframe: candles15m (DAILY) or candles30m (WEEKLY)
+        const candleKey = timeframe === 'DAILY' ? 'candles15m' : 'candles30m'
+        const candleUpdate = candles?.length ? { [candleKey]: candles } : {}
         return {
           tickers: {
             ...state.tickers,
             [ticker]: {
               ...existing,
+              ...candleUpdate,
               [key]: {
                 ...(existing[key] ?? {}),
                 rectangle,
