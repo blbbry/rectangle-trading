@@ -160,19 +160,27 @@ export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [
       .filter((_, i) => i % step === 0)
   }, [visible])
 
-  // Rectangle band helper — maps into price pane
-  function rectBand(rect, stroke, fill, dash) {
+  // Rectangle band helper — maps into price pane, includes edge labels
+  function rectBand(rect, stroke, fill, dash, labelPrefix) {
     if (!rect) return null
-    const y1 = priceToY(rect.high, priceMin, priceMax, priceH)
-    const y2 = priceToY(rect.low,  priceMin, priceMax, priceH)
-    const midY = priceToY(rect.mid, priceMin, priceMax, priceH)
-    const h  = Math.abs(y2 - y1)
+    const y1   = priceToY(rect.high, priceMin, priceMax, priceH)
+    const y2   = priceToY(rect.low,  priceMin, priceMax, priceH)
+    const midY = priceToY(rect.mid,  priceMin, priceMax, priceH)
+    const topY = Math.min(y1, y2)
+    const h    = Math.abs(y2 - y1)
     return (
       <g>
-        <rect x={0} y={Math.min(y1, y2)} width={chartW} height={h}
-          fill={fill} stroke={stroke} strokeWidth={1} strokeDasharray={dash} />
+        <rect x={0} y={topY} width={chartW} height={h}
+          fill={fill} stroke={stroke} strokeWidth={1.5} strokeDasharray={dash} />
         <line x1={0} x2={chartW} y1={midY} y2={midY}
-          stroke={stroke} strokeWidth={0.5} strokeOpacity={0.5} strokeDasharray="3 5" />
+          stroke={stroke} strokeWidth={0.75} strokeOpacity={0.5} strokeDasharray="4 6" />
+        {/* Edge labels */}
+        <text x={4} y={topY - 3} fill={stroke} fontSize={9} fontFamily="monospace" fillOpacity={0.8}>
+          {labelPrefix} H {formatPrice(rect.high)}
+        </text>
+        <text x={4} y={topY + h + 10} fill={stroke} fontSize={9} fontFamily="monospace" fillOpacity={0.8}>
+          {labelPrefix} L {formatPrice(rect.low)}
+        </text>
       </g>
     )
   }
@@ -238,8 +246,8 @@ export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [
           <g clipPath="url(#chart-clip)">
             <PriceGrid priceMin={priceMin} priceMax={priceMax} chartH={priceH} chartW={chartW} />
 
-            {showWeekly && rectBand(weekly?.rectangle, '#a855f7', 'rgba(168,85,247,0.06)', '5 3')}
-            {showDaily  && rectBand(daily?.rectangle,  '#3b82f6', 'rgba(59,130,246,0.08)', null)}
+            {showWeekly && rectBand(weekly?.rectangle, '#a855f7', 'rgba(168,85,247,0.10)', '6 3', 'W')}
+            {showDaily  && rectBand(daily?.rectangle,  '#3b82f6', 'rgba(59,130,246,0.14)', null,  'D')}
 
             {breakoutLevel != null && (() => {
               const y = priceToY(breakoutLevel, priceMin, priceMax, priceH)

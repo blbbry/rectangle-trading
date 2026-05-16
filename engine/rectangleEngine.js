@@ -126,7 +126,7 @@ export class RectangleEngine extends EventEmitter {
     this._running = true
     try {
       this._tickCount++
-      const fetchWeekly = this._tickCount % WEEKLY_TF_EVERY === 0
+      const fetchWeekly = this._tickCount === 1 || this._tickCount % WEEKLY_TF_EVERY === 0
       const tickers     = this.tickers.slice()
 
       for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
