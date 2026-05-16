@@ -111,7 +111,41 @@ const useStore = create((set, get) => ({
       })
       return
     }
-    // Other event types (state_change, tick_update, snapshot) are ignored by this store
+    if (type === 'tick_update') {
+      const { ticker, candles, ema9, ema20, rsiFastArr, rsiSlowArr } = payload
+      if (!ticker || !candles?.length) return
+      set((state) => {
+        const existing = state.tickers[ticker] ?? { daily: null, weekly: null }
+        return {
+          tickers: {
+            ...state.tickers,
+            [ticker]: { ...existing, candles, ema9, ema20, rsiFastArr, rsiSlowArr },
+          },
+        }
+      })
+      return
+    }
+
+    if (type === 'snapshot') {
+      // ScannerEngine snapshot: keyed by ticker, each has candles + indicator arrays
+      const data = payload.data ?? {}
+      set((state) => {
+        const tickers = { ...state.tickers }
+        for (const [ticker, s] of Object.entries(data)) {
+          tickers[ticker] = {
+            ...(tickers[ticker] ?? { daily: null, weekly: null }),
+            candles:    s.candles    ?? [],
+            ema9:       s.ema9       ?? [],
+            ema20:      s.ema20      ?? [],
+            rsiFastArr: s.rsiFastArr ?? [],
+            rsiSlowArr: s.rsiSlowArr ?? [],
+          }
+        }
+        return { tickers }
+      })
+      return
+    }
+    // state_change ignored — we only need candle + rectangle data
   },
 }))
 

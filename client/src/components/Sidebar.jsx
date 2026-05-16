@@ -1,7 +1,7 @@
+import { useState, useMemo } from 'react'
 import useStore from '../store/useStore.js'
 import TickerRow from './TickerRow.jsx'
 
-// Ordered category groups matching config/tickers.js
 const CATEGORIES = [
   { label: 'AI / Tech',        tickers: ['BBAI','SOUN','AI','PLTR','NOTE','INOD','VERI','GFAI','PATH','CRNC','EXAI','AMPL','INTA','TEM'] },
   { label: 'Space',            tickers: ['TLS','RDW','SPIR','RKLB','BKSY','PL','MNTS','SIDU','ASTS','SATL','LUNR','EVEX'] },
@@ -14,9 +14,54 @@ const CATEGORIES = [
   { label: 'Other',            tickers: ['OUST','SATS','VLD','REKR'] },
 ]
 
+const ALL_TICKERS = CATEGORIES.flatMap((c) => c.tickers)
+
+function fsmRank(tickerState) {
+  const d = tickerState?.daily?.fsm
+  const w = tickerState?.weekly?.fsm
+  if (d === 'BREAKOUT_RETEST' || w === 'BREAKOUT_RETEST') return 0
+  return 1
+}
+
 export default function Sidebar({ onClose }) {
-  const connected   = useStore((s) => s.connected)
-  const alertCount  = useStore((s) => s.alerts.length)
+  const connected  = useStore((s) => s.connected)
+  const alertCount = useStore((s) => s.alerts.length)
+  const tickers    = useStore((s) => s.tickers)
+
+  const [query, setQuery] = useState('')
+
+  const filteredCategories = useMemo(() => {
+    const q = query.trim().toUpperCase()
+
+    if (!q) {
+      // Sort each category's tickers: BREAKOUT_RETEST first, then alphabetical
+      return CATEGORIES.map(({ label, tickers: t }) => ({
+        label,
+        tickers: [...t].sort((a, b) => {
+          const ra = fsmRank(tickers[a])
+          const rb = fsmRank(tickers[b])
+          if (ra !== rb) return ra - rb
+          return a.localeCompare(b)
+        }),
+      }))
+    }
+
+    // Search mode: flat list of matches across all categories, sorted by FSM rank
+    const matches = ALL_TICKERS.filter((t) => t.includes(q))
+    matches.sort((a, b) => {
+      const ra = fsmRank(tickers[a])
+      const rb = fsmRank(tickers[b])
+      if (ra !== rb) return ra - rb
+      return a.localeCompare(b)
+    })
+    if (!matches.length) return []
+    return [{ label: 'Results', tickers: matches }]
+  }, [query, tickers])
+
+  const breakoutCount = useMemo(
+    () => ALL_TICKERS.filter((t) => fsmRank(tickers[t]) === 0).length,
+    [tickers]
+  )
 
   return (
     <div className="flex flex-col h-full">
@@ -29,7 +74,12 @@ export default function Sidebar({ onClose }) {
           </span>
           {alertCount > 0 && (
             <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-semibold">
-              {alertCount} alert{alertCount !== 1 ? 's' : ''}
+              {alertCount}▲
+            </span>
+          )}
+          {breakoutCount > 0 && (
+            <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-semibold">
+              {breakoutCount} BRKT
             </span>
           )}
         </div>
@@ -43,20 +93,35 @@ export default function Sidebar({ onClose }) {
         </button>
       </div>
 
+      {/* Search */}
+      <div className="px-2 py-2 border-b border-gray-800 flex-shrink-0">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search ticker…"
+          className="w-full bg-gray-800/60 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500 font-mono"
+        />
+      </div>
+
       {/* Ticker list */}
       <div className="flex-1 overflow-y-auto py-1">
-        {CATEGORIES.map(({ label, tickers }) => (
-          <div key={label}>
-            <div className="px-3 pt-3 pb-1">
-              <span className="text-[10px] font-semibold tracking-widest text-gray-600 uppercase">
-                {label}
-              </span>
+        {filteredCategories.length === 0 ? (
+          <div className="px-3 py-4 text-xs text-gray-600 text-center">No matches</div>
+        ) : (
+          filteredCategories.map(({ label, tickers: t }) => (
+            <div key={label}>
+              <div className="px-3 pt-3 pb-1">
+                <span className="text-[10px] font-semibold tracking-widest text-gray-600 uppercase">
+                  {label}
+                </span>
+              </div>
+              {t.map((ticker) => (
+                <TickerRow key={ticker} ticker={ticker} />
+              ))}
             </div>
-            {tickers.map((ticker) => (
-              <TickerRow key={ticker} ticker={ticker} />
-            ))}
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   )

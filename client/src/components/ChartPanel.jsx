@@ -1,5 +1,5 @@
 import useStore from '../store/useStore.js'
-import RectangleOverlay from './RectangleOverlay.jsx'
+import CandleChart from './CandleChart.jsx'
 import StatePanel from './StatePanel.jsx'
 import AlertFeed from './AlertFeed.jsx'
 
@@ -41,9 +41,15 @@ export default function ChartPanel() {
         )}
       </div>
 
-      {/* Rectangle visualization */}
-      <div className="flex-1 min-h-0">
-        <RectangleOverlay daily={daily} weekly={weekly} lastAlert={lastAlert} />
+      {/* Candlestick chart */}
+      <div className="flex-1 min-h-0 rounded border border-gray-800 overflow-hidden">
+        <CandleChart
+          candles={tickerState?.candles ?? []}
+          ema9={tickerState?.ema9 ?? []}
+          ema20={tickerState?.ema20 ?? []}
+          daily={daily}
+          weekly={weekly}
+        />
       </div>
 
       {/* Bottom: StatePanel + AlertFeed side-by-side */}
