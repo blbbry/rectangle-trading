@@ -150,16 +150,22 @@ export class RectangleEngine extends EventEmitter {
 
       // ── DAILY rectangle strategy ──────────────────────────────────────────
       const dailyRect = buildDailyRectangle(dailyCandles)
-      if (dailyRect && candles15m.length > 0 && candles5m.length > 0) {
+      if (dailyRect) {
         const key   = `${ticker}:DAILY`
         const state = maybeResetDaily(this._state.get(key))
-        const { nextState, alert } = evalRectangle(candles15m, candles5m, dailyRect, state, DAILY_OPTIONS)
-        this._state.set(key, { ...nextState, rectangle: dailyRect, candles: candles15m.slice(-200) })
 
-        if (alert) {
-          this.emit('alert', alert)
-          console.log(`[RectangleEngine] ALERT ${ticker} DAILY ${alert.strategyMode} ${alert.direction}`)
+        // Signal evaluation only runs when intraday candles exist (market hours)
+        let nextState = state
+        if (candles15m.length > 0 && candles5m.length > 0) {
+          const result = evalRectangle(candles15m, candles5m, dailyRect, state, DAILY_OPTIONS)
+          nextState = result.nextState
+          if (result.alert) {
+            this.emit('alert', result.alert)
+            console.log(`[RectangleEngine] ALERT ${ticker} DAILY ${result.alert.strategyMode} ${result.alert.direction}`)
+          }
         }
+
+        this._state.set(key, { ...nextState, rectangle: dailyRect, candles: candles15m.slice(-200) })
         this.emit('tick', {
           ticker,
           timeframe:            'DAILY',
@@ -175,16 +181,21 @@ export class RectangleEngine extends EventEmitter {
         const candles30m = await fetch30mCandles(ticker, 30)
         const weeklyRect = buildWeeklyRectangle(dailyCandles)
 
-        if (weeklyRect && candles30m.length > 0 && candles15m.length > 0) {
+        if (weeklyRect) {
           const key   = `${ticker}:WEEKLY`
           const state = maybeResetWeekly(this._state.get(key))
-          const { nextState, alert } = evalRectangle(candles30m, candles15m, weeklyRect, state, WEEKLY_OPTIONS)
-          this._state.set(key, { ...nextState, rectangle: weeklyRect, candles: candles30m.slice(-200) })
 
-          if (alert) {
-            this.emit('alert', alert)
-            console.log(`[RectangleEngine] ALERT ${ticker} WEEKLY ${alert.strategyMode} ${alert.direction}`)
+          let nextState = state
+          if (candles30m.length > 0 && candles15m.length > 0) {
+            const result = evalRectangle(candles30m, candles15m, weeklyRect, state, WEEKLY_OPTIONS)
+            nextState = result.nextState
+            if (result.alert) {
+              this.emit('alert', result.alert)
+              console.log(`[RectangleEngine] ALERT ${ticker} WEEKLY ${result.alert.strategyMode} ${result.alert.direction}`)
+            }
           }
+
+          this._state.set(key, { ...nextState, rectangle: weeklyRect, candles: candles30m.slice(-200) })
           this.emit('tick', {
             ticker,
             timeframe:            'WEEKLY',
