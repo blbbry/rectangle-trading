@@ -1,10 +1,22 @@
 import { useState } from 'react'
 import { formatPrice, formatPct, formatRelativeTime, formatET } from '../utils/formatters.js'
 
-const STRENGTH_STYLE = {
-  STRONG: 'font-bold text-white',
-  MEDIUM: 'font-medium text-gray-200',
-  BASIC:  'font-normal text-gray-400',
+const STRENGTH_COLOR = {
+  STRONG: 'bg-green-500/15 text-green-400 border-green-500/25',
+  MEDIUM: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
+  BASIC:  'bg-gray-800 text-gray-500 border-gray-700',
+}
+
+function rVolColor(rv) {
+  if (rv == null) return 'bg-gray-800 text-gray-600 border-gray-700'
+  if (rv >= 2)   return 'bg-green-500/15 text-green-400 border-green-500/25'
+  return 'bg-amber-500/15 text-amber-400 border-amber-500/25'
+}
+
+function distFromEdge(entry, high, low, direction) {
+  const edge = direction === 'LONG' ? low : high
+  if (!edge) return null
+  return Math.abs((entry - edge) / edge * 100)
 }
 
 export default function AlertCard({ alert }) {
@@ -42,12 +54,25 @@ export default function AlertCard({ alert }) {
         </div>
       </div>
 
-      {/* Pattern */}
-      <div className="px-3 pb-1.5">
-        <span className={`text-xs font-mono ${STRENGTH_STYLE[alert.patternStrength] ?? 'text-gray-400'}`}>
-          {alert.patternType}
+      {/* Pattern + signal context chips */}
+      <div className="px-3 pb-1.5 flex items-center gap-1.5 flex-wrap">
+        <span className="text-xs font-mono text-gray-300">{alert.patternType}</span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${STRENGTH_COLOR[alert.patternStrength] ?? STRENGTH_COLOR.BASIC}`}>
+          {alert.patternStrength}
         </span>
-        <span className="text-[10px] text-gray-600 ml-1">({alert.patternStrength})</span>
+        {alert.relativeVolume != null && (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${rVolColor(alert.relativeVolume)}`}>
+            {alert.relativeVolume.toFixed(1)}× vol
+          </span>
+        )}
+        {(() => {
+          const d = distFromEdge(alert.entryPrice, alert.rectangleHigh, alert.rectangleLow, alert.direction)
+          return d != null ? (
+            <span className="text-[10px] px-1.5 py-0.5 rounded border bg-gray-800 text-gray-500 border-gray-700 font-mono">
+              {d.toFixed(2)}% from edge
+            </span>
+          ) : null
+        })()}
       </div>
 
       {/* Price row */}

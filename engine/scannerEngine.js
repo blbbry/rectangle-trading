@@ -28,7 +28,8 @@ export class ScannerEngine extends EventEmitter {
         candles: [], ema9: [], ema20: [], rsiFastArr: [], rsiSlowArr: [],
       }])
     )
-    this._timer = null
+    this._timer   = null
+    this._running = false
   }
 
   start() {
@@ -67,10 +68,16 @@ export class ScannerEngine extends EventEmitter {
   }
 
   async _tick() {
-    const tickers = this.tickers.slice()
-    for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
-      const batch = tickers.slice(i, i + BATCH_SIZE)
-      await Promise.allSettled(batch.map(t => this._processTicker(t)))
+    if (this._running) return
+    this._running = true
+    try {
+      const tickers = this.tickers.slice()
+      for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
+        const batch = tickers.slice(i, i + BATCH_SIZE)
+        await Promise.allSettled(batch.map(t => this._processTicker(t)))
+      }
+    } finally {
+      this._running = false
     }
   }
 

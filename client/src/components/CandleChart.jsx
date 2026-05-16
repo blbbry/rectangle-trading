@@ -2,10 +2,11 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { formatPrice } from '../utils/formatters.js'
 
 // ─── Layout constants ────────────────────────────────────────────────────────
-const PRICE_AXIS_W = 70
-const TIME_AXIS_H  = 22
-const MIN_CANDLE_W = 3
-const MAX_CANDLE_W = 18
+const PRICE_AXIS_W  = 70
+const TIME_AXIS_H   = 22
+const VOL_PANE_FRAC = 0.15   // bottom 15% of chart reserved for volume bars
+const MIN_CANDLE_W  = 3
+const MAX_CANDLE_W  = 18
 const DEFAULT_VISIBLE = 60   // candles shown on load
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -81,8 +82,10 @@ export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [
     return () => ro.disconnect()
   }, [])
 
-  const chartW = dims.w - PRICE_AXIS_W
-  const chartH = dims.h - TIME_AXIS_H
+  const chartW   = dims.w - PRICE_AXIS_W
+  const chartH   = dims.h - TIME_AXIS_H
+  const volPaneH = chartH * VOL_PANE_FRAC
+  const priceH   = chartH * (1 - VOL_PANE_FRAC)  // price candles live in top portion
 
   // Reset visible window when candle series changes
   const candleLen = candles.length
@@ -127,13 +130,19 @@ export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [
   const candleW = clamp(chartW / Math.max(visible.length, 1) * 0.75, MIN_CANDLE_W, MAX_CANDLE_W)
   const colW    = chartW / Math.max(visible.length, 1)
 
-  // EMA polyline points
+  // EMA polyline points (mapped into price pane = top priceH pixels)
   function emaPoints(arr) {
     return arr
-      .map((v, i) => v == null ? null : `${colW * i + colW / 2},${priceToY(v, priceMin, priceMax, chartH)}`)
+      .map((v, i) => v == null ? null : `${colW * i + colW / 2},${priceToY(v, priceMin, priceMax, priceH)}`)
       .filter(Boolean)
       .join(' ')
   }
+
+  // Volume bar heights for visible candles
+  const maxVol = useMemo(
+    () => Math.max(...visible.map(c => c.volume || 0), 1),
+    [visible]
+  )
 
   // Scroll wheel: zoom in/out
   function onWheel(e) {
@@ -151,12 +160,12 @@ export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [
       .filter((_, i) => i % step === 0)
   }, [visible])
 
-  // Rectangle band helper
+  // Rectangle band helper — maps into price pane
   function rectBand(rect, stroke, fill, dash) {
     if (!rect) return null
-    const y1 = priceToY(rect.high, priceMin, priceMax, chartH)
-    const y2 = priceToY(rect.low,  priceMin, priceMax, chartH)
-    const midY = priceToY(rect.mid, priceMin, priceMax, chartH)
+    const y1 = priceToY(rect.high, priceMin, priceMax, priceH)
+    const y2 = priceToY(rect.low,  priceMin, priceMax, priceH)
+    const midY = priceToY(rect.mid, priceMin, priceMax, priceH)
     const h  = Math.abs(y2 - y1)
     return (
       <g>
@@ -207,34 +216,33 @@ export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [
           onWheel={onWheel}
           style={{ cursor: 'crosshair' }}
         >
-          {/* Chart area clip */}
+          {/* Clip paths */}
           <defs>
             <clipPath id="chart-clip">
-              <rect x={0} y={0} width={chartW} height={chartH} />
+              <rect x={0} y={0} width={chartW} height={priceH} />
+            </clipPath>
+            <clipPath id="vol-clip">
+              <rect x={0} y={priceH} width={chartW} height={volPaneH} />
             </clipPath>
           </defs>
 
           {/* No-candles notice — rectangles still render */}
           {!candles.length && (
-            <text x={chartW / 2} y={chartH / 2} textAnchor="middle"
+            <text x={chartW / 2} y={priceH / 2} textAnchor="middle"
               fill="#374151" fontSize={11} fontFamily="monospace">
               Zones from prior session — candles load at market open
             </text>
           )}
 
+          {/* ── Price pane ── */}
           <g clipPath="url(#chart-clip)">
-            {/* Price grid */}
-            <PriceGrid priceMin={priceMin} priceMax={priceMax} chartH={chartH} chartW={chartW} />
+            <PriceGrid priceMin={priceMin} priceMax={priceMax} chartH={priceH} chartW={chartW} />
 
-            {/* WEEKLY rectangle (behind) */}
             {showWeekly && rectBand(weekly?.rectangle, '#a855f7', 'rgba(168,85,247,0.06)', '5 3')}
+            {showDaily  && rectBand(daily?.rectangle,  '#3b82f6', 'rgba(59,130,246,0.08)', null)}
 
-            {/* DAILY rectangle (front) */}
-            {showDaily && rectBand(daily?.rectangle, '#3b82f6', 'rgba(59,130,246,0.08)', null)}
-
-            {/* Breakout level */}
             {breakoutLevel != null && (() => {
-              const y = priceToY(breakoutLevel, priceMin, priceMax, chartH)
+              const y = priceToY(breakoutLevel, priceMin, priceMax, priceH)
               return (
                 <g>
                   <line x1={0} x2={chartW} y1={y} y2={y}
@@ -246,7 +254,6 @@ export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [
               )
             })()}
 
-            {/* EMA lines */}
             {showEma && visibleEma9.length > 0 && (
               <polyline points={emaPoints(visibleEma9)}
                 fill="none" stroke="#fbbf24" strokeWidth={1} strokeOpacity={0.8} />
@@ -256,41 +263,50 @@ export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [
                 fill="none" stroke="#f97316" strokeWidth={1} strokeOpacity={0.8} />
             )}
 
-            {/* Candlesticks */}
             {visible.map((c, i) => {
               const x      = colW * i + colW / 2
-              const openY  = priceToY(c.open,  priceMin, priceMax, chartH)
-              const closeY = priceToY(c.close, priceMin, priceMax, chartH)
-              const highY  = priceToY(c.high,  priceMin, priceMax, chartH)
-              const lowY   = priceToY(c.low,   priceMin, priceMax, chartH)
+              const openY  = priceToY(c.open,  priceMin, priceMax, priceH)
+              const closeY = priceToY(c.close, priceMin, priceMax, priceH)
+              const highY  = priceToY(c.high,  priceMin, priceMax, priceH)
+              const lowY   = priceToY(c.low,   priceMin, priceMax, priceH)
               const bull   = c.close >= c.open
               const color  = bull ? '#22c55e' : '#ef4444'
               const bodyY  = Math.min(openY, closeY)
               const bodyH  = Math.max(1, Math.abs(closeY - openY))
               return (
                 <g key={i}>
-                  {/* Wick */}
                   <line x1={x} x2={x} y1={highY} y2={lowY} stroke={color} strokeWidth={1} />
-                  {/* Body */}
-                  <rect
-                    x={x - candleW / 2} y={bodyY}
-                    width={candleW} height={bodyH}
-                    fill={bull ? color : color}
-                    fillOpacity={bull ? 0.85 : 1}
-                    stroke={color} strokeWidth={0.5}
-                  />
+                  <rect x={x - candleW / 2} y={bodyY} width={candleW} height={bodyH}
+                    fill={color} fillOpacity={bull ? 0.85 : 1} stroke={color} strokeWidth={0.5} />
                 </g>
+              )
+            })}
+          </g>
+
+          {/* ── Volume pane ── */}
+          <g clipPath="url(#vol-clip)">
+            <line x1={0} x2={chartW} y1={priceH} y2={priceH} stroke="#1f2937" strokeWidth={0.5} />
+            {visible.map((c, i) => {
+              const bull   = c.close >= c.open
+              const barH   = ((c.volume || 0) / maxVol) * (volPaneH - 2)
+              const x      = colW * i + colW / 2
+              return (
+                <rect key={i}
+                  x={x - candleW / 2} y={priceH + volPaneH - barH}
+                  width={candleW} height={barH}
+                  fill={bull ? '#22c55e' : '#ef4444'} fillOpacity={0.4}
+                />
               )
             })}
           </g>
 
           {/* Price axis (right) */}
           <g transform={`translate(${chartW}, 0)`}>
-            <line x1={0} x2={0} y1={0} y2={chartH} stroke="#374151" strokeWidth={0.5} />
-            <PriceGrid priceMin={priceMin} priceMax={priceMax} chartH={chartH} chartW={0} />
+            <line x1={0} x2={0} y1={0} y2={priceH} stroke="#374151" strokeWidth={0.5} />
+            <PriceGrid priceMin={priceMin} priceMax={priceMax} chartH={priceH} chartW={0} />
           </g>
 
-          {/* Time axis (bottom) */}
+          {/* Time axis (bottom of price pane) */}
           <g transform={`translate(0, ${chartH})`}>
             <line x1={0} x2={chartW} y1={0} y2={0} stroke="#374151" strokeWidth={0.5} />
             {timeLabels.map(({ i, label }) => (
@@ -304,7 +320,7 @@ export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [
 
           {/* EMA legend */}
           {showEma && (
-            <g transform={`translate(8, ${dims.h - 30})`}>
+            <g transform={`translate(8, ${priceH - 20})`}>
               <rect width={6} height={2} y={0} fill="#fbbf24" />
               <text x={10} y={3} fill="#fbbf24" fontSize={8} fontFamily="monospace">EMA 9</text>
               <rect width={6} height={2} y={10} fill="#f97316" />

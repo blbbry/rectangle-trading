@@ -1,4 +1,5 @@
 import YahooFinance from 'yahoo-finance2'
+import { getETDate, isRegularSession } from '../utils/etTime.js'
 
 const yahooFinance = new YahooFinance()
 
@@ -29,16 +30,6 @@ export async function fetchIntradayCandles(ticker) {
     }
     return { ticker, error: msg }
   }
-}
-
-// Regular session: 9:30–16:00 ET (UTC-4 EDT / UTC-5 EST).
-function isRegularSession(date) {
-  if (!date) return false
-  const utcHour = date.getUTCHours()
-  const utcMin  = date.getUTCMinutes()
-  const afterOpen  = utcHour > 13 || (utcHour === 13 && utcMin >= 30)
-  const beforeClose = utcHour < 21
-  return afterOpen && beforeClose
 }
 
 // Daily candles — used for the trend filter (confirms structural bullishness).
@@ -114,12 +105,9 @@ export async function fetch4HCandles(ticker, days = 60) {
 function aggregate4H(hourlyCandles) {
   if (hourlyCandles.length === 0) return []
 
-  // Group by ET calendar date. Use UTC-4 approximation (EDT; close enough year-round
-  // since we only care about grouping by market day, not precise DST boundary).
   const dayMap = new Map()
   for (const c of hourlyCandles) {
-    const etMs  = c.timestamp.getTime() - 4 * 60 * 60 * 1000
-    const key   = new Date(etMs).toISOString().slice(0, 10)
+    const key = getETDate(c.timestamp.getTime())
     if (!dayMap.has(key)) dayMap.set(key, [])
     dayMap.get(key).push(c)
   }

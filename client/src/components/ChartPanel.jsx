@@ -56,7 +56,10 @@ export default function ChartPanel() {
       {/* Bottom: StatePanel + AlertFeed side-by-side */}
       <div className="flex gap-3 flex-shrink-0 h-52">
         <div className="flex-shrink-0 w-72">
-          <StatePanel daily={daily} weekly={weekly} />
+          <StatePanel daily={daily} weekly={weekly}
+            candles15m={tickerState?.candles15m ?? []}
+            candles30m={tickerState?.candles30m ?? []}
+          />
         </div>
         <div className="flex-1 min-w-0">
           <AlertFeed ticker={selectedTicker} />

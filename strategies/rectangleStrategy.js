@@ -44,6 +44,14 @@ function emptyBreakout() {
   return { level: null, direction: null, ts: null }
 }
 
+function relativeVolume(candles, period = 20) {
+  const cur  = candles[candles.length - 1]
+  const hist = candles.slice(-(period + 1), -1)
+  if (!hist.length || !cur?.volume) return null
+  const avg = hist.reduce((s, c) => s + (c.volume || 0), 0) / hist.length
+  return avg > 0 ? cur.volume / avg : null
+}
+
 // ─── Pattern detection — FIRST MATCH WINS ────────────────────────────────────
 
 export function detectPattern(candles) {
@@ -100,7 +108,7 @@ export function detectPattern(candles) {
 
 // ─── Alert builder ────────────────────────────────────────────────────────────
 
-function buildAlert(state, strategyMode, direction, rectangle, rectangleLevel, candle, pattern) {
+function buildAlert(state, strategyMode, direction, rectangle, rectangleLevel, candle, pattern, relVol = null) {
   let stopLevel
   if (strategyMode === 'BREAKOUT') {
     // Broken level flips role: support for LONG, resistance for SHORT
@@ -142,6 +150,7 @@ function buildAlert(state, strategyMode, direction, rectangle, rectangleLevel, c
     stopLevel,
     patternType:     pattern.patternType,
     patternStrength: pattern.strength,
+    relativeVolume:  relVol,
     reasons,
     timestamp:       candle.timestamp.getTime(),  // candle time, not wall clock
   }
@@ -203,6 +212,10 @@ function evalBreakoutDetection(candlesBreakout, rectangle, state, options, atr, 
   if (candlesBreakout.length < 1) return null
   const cur = candlesBreakout[candlesBreakout.length - 1]
 
+  // Require volume surge to confirm breakout — prevents false breakouts on low-vol moves
+  const relVol = relativeVolume(candlesBreakout)
+  if (relVol !== null && relVol < 1.5) return null
+
   const bufHigh = breakoutBuffer(atr, rectangle.high, options)
   const bufLow  = breakoutBuffer(atr, rectangle.low,  options)
 
@@ -234,18 +247,20 @@ function evalRetest(candlesConfirm, rectangle, state, options, candleNow) {
   if (!pattern || pattern.direction !== direction) return null
   if (!isDisplaced(cur, prev, direction)) return null
 
+  const relVol = relativeVolume(candlesConfirm)
+
   if (direction === 'LONG') {
     // Candle wicked down to level but closed above it
     if (!nearLevel(cur.low, level, options.retestTolerance)) return null
     if (cur.close <= level) return null
-    return buildAlert(state, 'BREAKOUT', 'LONG', rectangle, level, cur, pattern)
+    return buildAlert(state, 'BREAKOUT', 'LONG', rectangle, level, cur, pattern, relVol)
   }
 
   if (direction === 'SHORT') {
     // Candle wicked up to level but closed below it
     if (!nearLevel(cur.high, level, options.retestTolerance)) return null
     if (cur.close >= level) return null
-    return buildAlert(state, 'BREAKOUT', 'SHORT', rectangle, level, cur, pattern)
+    return buildAlert(state, 'BREAKOUT', 'SHORT', rectangle, level, cur, pattern, relVol)
   }
 
   return null

@@ -83,6 +83,7 @@ export class RectangleEngine extends EventEmitter {
     this._tickCount = 0
     this._timer     = null
 
+    this._running = false
     this._state = new Map()
     for (const ticker of tickers) {
       this._state.set(`${ticker}:DAILY`,  makeInitialState(ticker, 'DAILY'))
@@ -121,14 +122,20 @@ export class RectangleEngine extends EventEmitter {
   }
 
   async _tick() {
-    this._tickCount++
-    const fetchWeekly = this._tickCount % WEEKLY_TF_EVERY === 0
-    const tickers     = this.tickers.slice()
+    if (this._running) return
+    this._running = true
+    try {
+      this._tickCount++
+      const fetchWeekly = this._tickCount % WEEKLY_TF_EVERY === 0
+      const tickers     = this.tickers.slice()
 
-    for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
-      const batch = tickers.slice(i, i + BATCH_SIZE)
-      await Promise.allSettled(batch.map(t => this._processTicker(t, fetchWeekly)))
-      if (i + BATCH_SIZE < tickers.length) await sleep(INTER_BATCH_MS)
+      for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
+        const batch = tickers.slice(i, i + BATCH_SIZE)
+        await Promise.allSettled(batch.map(t => this._processTicker(t, fetchWeekly)))
+        if (i + BATCH_SIZE < tickers.length) await sleep(INTER_BATCH_MS)
+      }
+    } finally {
+      this._running = false
     }
   }
 

@@ -1,16 +1,9 @@
 import YahooFinance from 'yahoo-finance2'
+import { getETDate, isRegularSession } from '../utils/etTime.js'
+
+export { getETDate } from '../utils/etTime.js'
 
 const yahooFinance = new YahooFinance()
-
-// Regular session filter — mirrors fetchCandles.js (9:30–16:00 ET, UTC-4 approx)
-function isRegularSession(date) {
-  if (!date) return false
-  const utcHour = date.getUTCHours()
-  const utcMin  = date.getUTCMinutes()
-  const afterOpen   = utcHour > 13 || (utcHour === 13 && utcMin >= 30)
-  const beforeClose = utcHour < 21
-  return afterOpen && beforeClose
-}
 
 function toOHLCV(q) {
   return { timestamp: q.date, open: q.open, high: q.high, low: q.low, close: q.close, volume: q.volume }
@@ -49,11 +42,6 @@ export function fetch30mCandles(ticker, days = 30) { return fetchIntraday(ticker
 export { fetchIntradayCandles as fetch5mCandles } from './fetchCandles.js'
 
 // ─── Date helpers (wall clock only — used for rectangle construction) ─────────
-
-// ET date string: "YYYY-MM-DD" using UTC-4 approximation
-export function getETDate(ms) {
-  return new Date(ms - 4 * 3600_000).toISOString().slice(0, 10)
-}
 
 // ISO-8601 week string: "YYYY-Www" (Mon–Sun)
 export function getISOWeek(date) {

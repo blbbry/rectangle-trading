@@ -16,12 +16,26 @@ const CATEGORIES = [
 
 const ALL_TICKERS = CATEGORIES.flatMap((c) => c.tickers)
 
-function fsmRank(tickerState) {
+const NEAR_EDGE_PCT = 0.005  // within 0.5% of rectangle edge
+
+function tickerGroup(tickerState) {
   const d = tickerState?.daily?.fsm
   const w = tickerState?.weekly?.fsm
-  if (d === 'BREAKOUT_RETEST' || w === 'BREAKOUT_RETEST') return 0
-  return 1
+  if (d === 'BREAKOUT_RETEST' || w === 'BREAKOUT_RETEST') return 'BREAKOUT'
+
+  // Check if last 15m candle close is near daily rectangle edge
+  const close = tickerState?.candles15m?.at(-1)?.close
+  const rect  = tickerState?.daily?.rectangle
+  if (close && rect) {
+    const distHigh = Math.abs(close - rect.high) / close
+    const distLow  = Math.abs(close - rect.low)  / close
+    if (distHigh <= NEAR_EDGE_PCT || distLow <= NEAR_EDGE_PCT) return 'NEAR_EDGE'
+  }
+  return 'WATCHING'
 }
+
+const GROUP_ORDER  = ['BREAKOUT', 'NEAR_EDGE', 'WATCHING']
+const GROUP_LABELS = { BREAKOUT: 'Active Breakout', NEAR_EDGE: 'Near Edge', WATCHING: 'Watching' }
 
 export default function Sidebar({ onClose }) {
   const connected  = useStore((s) => s.connected)
@@ -33,33 +47,33 @@ export default function Sidebar({ onClose }) {
   const filteredCategories = useMemo(() => {
     const q = query.trim().toUpperCase()
 
-    if (!q) {
-      // Sort each category's tickers: BREAKOUT_RETEST first, then alphabetical
-      return CATEGORIES.map(({ label, tickers: t }) => ({
-        label,
-        tickers: [...t].sort((a, b) => {
-          const ra = fsmRank(tickers[a])
-          const rb = fsmRank(tickers[b])
-          if (ra !== rb) return ra - rb
-          return a.localeCompare(b)
-        }),
-      }))
+    if (q) {
+      // Search mode: flat sorted list
+      const matches = ALL_TICKERS.filter((t) => t.includes(q))
+      matches.sort((a, b) => {
+        const ga = GROUP_ORDER.indexOf(tickerGroup(tickers[a]))
+        const gb = GROUP_ORDER.indexOf(tickerGroup(tickers[b]))
+        if (ga !== gb) return ga - gb
+        return a.localeCompare(b)
+      })
+      return matches.length ? [{ label: 'Results', tickers: matches }] : []
     }
 
-    // Search mode: flat list of matches across all categories, sorted by FSM rank
-    const matches = ALL_TICKERS.filter((t) => t.includes(q))
-    matches.sort((a, b) => {
-      const ra = fsmRank(tickers[a])
-      const rb = fsmRank(tickers[b])
-      if (ra !== rb) return ra - rb
-      return a.localeCompare(b)
-    })
-    if (!matches.length) return []
-    return [{ label: 'Results', tickers: matches }]
+    // Default: group by trading state
+    const groups = { BREAKOUT: [], NEAR_EDGE: [], WATCHING: [] }
+    for (const t of ALL_TICKERS) {
+      const g = tickerGroup(tickers[t])
+      groups[g].push(t)
+    }
+    for (const g of GROUP_ORDER) groups[g].sort((a, b) => a.localeCompare(b))
+
+    return GROUP_ORDER
+      .filter((g) => groups[g].length > 0)
+      .map((g) => ({ label: GROUP_LABELS[g], tickers: groups[g] }))
   }, [query, tickers])
 
   const breakoutCount = useMemo(
-    () => ALL_TICKERS.filter((t) => fsmRank(tickers[t]) === 0).length,
+    () => ALL_TICKERS.filter((t) => tickerGroup(tickers[t]) === 'BREAKOUT').length,
     [tickers]
   )
 
