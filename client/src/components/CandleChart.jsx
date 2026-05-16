@@ -65,7 +65,7 @@ export default function CandleChart({ candles15m = [], candles30m = [], ema9 = [
   const [visibleEnd, setVisibleEnd]     = useState(null)  // null = latest
   const [visibleCount, setVisibleCount] = useState(DEFAULT_VISIBLE)
   const [showDaily,  setShowDaily]  = useState(true)
-  const [showWeekly, setShowWeekly] = useState(false)  // weekly off by default (30m = many bars)
+  const [showWeekly, setShowWeekly] = useState(true)
   const [showEma,    setShowEma]    = useState(true)
 
   // Active candle series: 30m when only weekly is shown, otherwise 15m
