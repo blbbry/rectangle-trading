@@ -1,0 +1,118 @@
+import { create } from 'zustand'
+
+function tfKey(timeframe) {
+  return timeframe === 'DAILY' ? 'daily' : 'weekly'
+}
+
+function alertKey(alert) {
+  return `${alert.timestamp}:${alert.ticker}:${alert.direction}`
+}
+
+const useStore = create((set, get) => ({
+  connected: false,
+  selectedTicker: null,
+  tickers: {},           // { [symbol]: { daily, weekly } }
+  alerts: [],            // AlertPayload[], newest first
+  seenAlertKeys: new Set(),
+
+  setConnected: (connected) => set({ connected }),
+
+  setSelectedTicker: (ticker) => {
+    set((state) => {
+      // Clear hasAlert flag for the selected ticker
+      const existing = state.tickers[ticker]
+      if (!existing) return { selectedTicker: ticker }
+      return {
+        selectedTicker: ticker,
+        tickers: {
+          ...state.tickers,
+          [ticker]: {
+            daily:  { ...existing.daily,  hasAlert: false },
+            weekly: { ...existing.weekly, hasAlert: false },
+          },
+        },
+      }
+    })
+  },
+
+  handleEvent: (event) => {
+    const { type, ...payload } = event
+
+    if (type === 'rectangle_snapshot') {
+      // payload.data is keyed by "TICKER:DAILY" / "TICKER:WEEKLY"
+      const data = payload.data ?? {}
+      const tickers = {}
+      for (const [key, state] of Object.entries(data)) {
+        const [ticker, tf] = key.split(':')
+        if (!tickers[ticker]) tickers[ticker] = { daily: null, weekly: null }
+        tickers[ticker][tf.toLowerCase()] = {
+          rectangle:            state.rectangle ?? null,
+          fsm:                  state.fsm ?? 'WATCHING',
+          lastProcessedCandleTs: state.lastProcessedCandleTs ?? 0,
+          breakout:             state.breakout ?? null,
+          hasAlert:             false,
+        }
+      }
+      set({ tickers })
+      return
+    }
+
+    if (type === 'rectangle_tick') {
+      const { ticker, timeframe, rectangle, fsm, lastProcessedCandleTs } = payload
+      if (!ticker || !timeframe) return
+      const key = tfKey(timeframe)
+      set((state) => {
+        const existing = state.tickers[ticker] ?? { daily: null, weekly: null }
+        return {
+          tickers: {
+            ...state.tickers,
+            [ticker]: {
+              ...existing,
+              [key]: {
+                ...(existing[key] ?? {}),
+                rectangle,
+                fsm,
+                lastProcessedCandleTs,
+              },
+            },
+          },
+        }
+      })
+      return
+    }
+
+    if (type === 'rectangle_alert') {
+      const alert = payload
+      const key = alertKey(alert)
+      const { seenAlertKeys } = get()
+      if (seenAlertKeys.has(key)) return
+
+      const tf = tfKey(alert.timeframe ?? 'DAILY')
+      const newSeen = new Set(seenAlertKeys)
+      newSeen.add(key)
+
+      set((state) => {
+        const existing = state.tickers[alert.ticker] ?? { daily: null, weekly: null }
+        return {
+          seenAlertKeys: newSeen,
+          alerts: [alert, ...state.alerts].slice(0, 500), // cap at 500
+          tickers: {
+            ...state.tickers,
+            [alert.ticker]: {
+              ...existing,
+              [tf]: {
+                ...(existing[tf] ?? {}),
+                hasAlert: true,
+                lastAlert: alert,
+              },
+            },
+          },
+        }
+      })
+      return
+    }
+    // Other event types (state_change, tick_update, snapshot) are ignored by this store
+  },
+}))
+
+export default useStore
