@@ -108,6 +108,7 @@ export class RectangleEngine extends EventEmitter {
         ticker:               s.ticker,
         timeframe:            s.timeframe,
         fsm:                  s.fsm,
+        rectangle:            s.rectangle ?? null,
         breakout:             s.breakout,
         lastAlertTs:          s.lastAlertTs,
         lastProcessedCandleTs: s.lastProcessedCandleTs,
@@ -145,7 +146,7 @@ export class RectangleEngine extends EventEmitter {
         const key   = `${ticker}:DAILY`
         const state = maybeResetDaily(this._state.get(key))
         const { nextState, alert } = evalRectangle(candles15m, candles5m, dailyRect, state, DAILY_OPTIONS)
-        this._state.set(key, nextState)
+        this._state.set(key, { ...nextState, rectangle: dailyRect })
 
         if (alert) {
           this.emit('alert', alert)
@@ -170,7 +171,7 @@ export class RectangleEngine extends EventEmitter {
           const key   = `${ticker}:WEEKLY`
           const state = maybeResetWeekly(this._state.get(key))
           const { nextState, alert } = evalRectangle(candles30m, candles15m, weeklyRect, state, WEEKLY_OPTIONS)
-          this._state.set(key, nextState)
+          this._state.set(key, { ...nextState, rectangle: weeklyRect })
 
           if (alert) {
             this.emit('alert', alert)
