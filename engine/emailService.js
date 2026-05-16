@@ -123,3 +123,66 @@ export function startEmailService(engine) {
 
   console.log('[Email] Email alert service started')
 }
+
+export function startRectangleEmailService(engine) {
+  const transport = buildTransport()
+  const cooldowns = new Map()
+
+  if (!transport) return  // EMAIL_HOST not set — silently skip
+
+  engine.on('alert', async (payload) => {
+    const { ticker, strategyMode, timeframe, direction,
+            rectangleHigh, rectangleLow, rectangleLevel,
+            entryPrice, stopLevel, patternType, patternStrength,
+            reasons, timestamp } = payload
+
+    const key  = `${ticker}:${timeframe}:${strategyMode}`
+    const last = cooldowns.get(key) ?? 0
+    if (Date.now() - last < COOLDOWN_MS) return
+    cooldowns.set(key, Date.now())
+
+    const from = process.env.EMAIL_FROM || process.env.EMAIL_USER
+    const to   = process.env.EMAIL_TO   || from
+    const dir  = direction === 'LONG' ? '🟢 LONG' : '🔴 SHORT'
+
+    const subject = `[RECT] ${ticker} ${timeframe} — ${strategyMode} ${direction}`
+    const text = [
+      `╔══════════════════════════════════════════╗`,
+      `║       Rectangle Range Alert System       ║`,
+      `╚══════════════════════════════════════════╝`,
+      ``,
+      `  Ticker:      ${ticker}`,
+      `  Timeframe:   ${timeframe}`,
+      `  Signal:      ${strategyMode}`,
+      `  Direction:   ${dir}`,
+      ``,
+      `── Rectangle ───────────────────────────────`,
+      `  High:        $${rectangleHigh.toFixed(4)}`,
+      `  Low:         $${rectangleLow.toFixed(4)}`,
+      `  Level:       $${rectangleLevel.toFixed(4)}`,
+      ``,
+      `── Trade ───────────────────────────────────`,
+      `  Entry:       $${entryPrice.toFixed(4)}`,
+      `  Stop:        $${stopLevel.toFixed(4)}`,
+      ``,
+      `── Pattern ─────────────────────────────────`,
+      `  Type:        ${patternType}`,
+      `  Strength:    ${patternStrength}`,
+      ``,
+      `── Reasons ─────────────────────────────────`,
+      ...reasons.map(r => `  • ${r}`),
+      ``,
+      `── Meta ────────────────────────────────────`,
+      `  Signal Time: ${new Date(timestamp).toLocaleString('en-US', { timeZone: 'America/New_York' })} ET`,
+    ].join('\n')
+
+    try {
+      await transport.sendMail({ from, to, subject, text })
+      console.log(`[Email] Sent rectangle alert: ${ticker} ${timeframe} ${strategyMode} ${direction}`)
+    } catch (err) {
+      console.error(`[Email] Failed to send rectangle alert for ${ticker}:`, err.message)
+    }
+  })
+
+  console.log('[Email] Rectangle email alert service started')
+}

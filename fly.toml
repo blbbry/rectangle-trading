@@ -1,4 +1,4 @@
-app = "rsi-vwap-trading"
+app = "rectangle-trading"
 primary_region = "iad"
 
 [build]

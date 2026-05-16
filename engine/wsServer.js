@@ -1,6 +1,6 @@
 import { WebSocketServer } from 'ws'
 
-export function createWsServer(httpServer, engine) {
+export function createWsServer(httpServer, engine, rectangleEngine) {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
 
   function broadcast(msg) {
@@ -13,9 +13,12 @@ export function createWsServer(httpServer, engine) {
   }
 
   wss.on('connection', ws => {
-    // Send full state snapshot immediately on connect
+    // Send full state snapshots immediately on connect
     try {
       ws.send(JSON.stringify({ type: 'snapshot', data: engine.getState() }))
+      if (rectangleEngine) {
+        ws.send(JSON.stringify({ type: 'rectangle_snapshot', data: rectangleEngine.getState() }))
+      }
     } catch (err) {
       console.error('[WS] Failed to send snapshot:', err.message)
     }
@@ -24,6 +27,11 @@ export function createWsServer(httpServer, engine) {
 
   engine.on('state_change', payload => broadcast({ type: 'state_change', ...payload }))
   engine.on('tick_update',  payload => broadcast({ type: 'tick_update',  ...payload }))
+
+  if (rectangleEngine) {
+    rectangleEngine.on('alert', payload => broadcast({ type: 'rectangle_alert', ...payload }))
+    rectangleEngine.on('tick',  payload => broadcast({ type: 'rectangle_tick',  ...payload }))
+  }
 
   console.log('[WS] WebSocket server attached at /ws')
   return wss

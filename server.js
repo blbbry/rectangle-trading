@@ -5,8 +5,9 @@ import fetch from "node-fetch"
 import dotenv from "dotenv"
 import scannerRouter from "./routes/scanner.js"
 import { ScannerEngine } from "./engine/scannerEngine.js"
+import { RectangleEngine } from "./engine/rectangleEngine.js"
 import { createWsServer } from "./engine/wsServer.js"
-import { startEmailService } from "./engine/emailService.js"
+import { startEmailService, startRectangleEmailService } from "./engine/emailService.js"
 import { DEFAULT_TICKERS } from "./config/tickers.js"
 
 dotenv.config()
@@ -63,9 +64,14 @@ app.get("/price", async (req, res) => {
 const PORT = process.env.PORT || 3001
 const httpServer = createServer(app)
 
-const engine = new ScannerEngine(DEFAULT_TICKERS)
-createWsServer(httpServer, engine)
+const engine          = new ScannerEngine(DEFAULT_TICKERS)
+const rectangleEngine = new RectangleEngine(DEFAULT_TICKERS)
+
+createWsServer(httpServer, engine, rectangleEngine)
 startEmailService(engine)
+startRectangleEmailService(rectangleEngine)
+
 engine.start()
+rectangleEngine.start()
 
 httpServer.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`))
