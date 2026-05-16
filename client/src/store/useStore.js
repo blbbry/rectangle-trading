@@ -45,6 +45,7 @@ const useStore = create((set, get) => ({
       for (const [key, state] of Object.entries(data)) {
         const [ticker, tf] = key.split(':')
         if (!tickers[ticker]) tickers[ticker] = { daily: null, weekly: null }
+        const candleKey = tf === 'DAILY' ? 'candles15m' : 'candles30m'
         tickers[ticker][tf.toLowerCase()] = {
           rectangle:            state.rectangle ?? null,
           fsm:                  state.fsm ?? 'WATCHING',
@@ -52,6 +53,7 @@ const useStore = create((set, get) => ({
           breakout:             state.breakout ?? null,
           hasAlert:             false,
         }
+        if (state.candles?.length) tickers[ticker][candleKey] = state.candles
       }
       set({ tickers })
       return
