@@ -188,9 +188,9 @@ export default function CandleChart({ candles = [], ema9 = [], ema20 = [], daily
         <span className="text-[10px] text-gray-600 ml-1 self-center">scroll to zoom</span>
       </div>
 
-      {!candles.length ? (
+      {!candles.length && !daily?.rectangle && !weekly?.rectangle ? (
         <div className="flex items-center justify-center h-full text-gray-700 text-sm">
-          Waiting for 4H candle data…
+          Waiting for data…
         </div>
       ) : (
         <svg
@@ -204,6 +204,14 @@ export default function CandleChart({ candles = [], ema9 = [], ema20 = [], daily
               <rect x={0} y={0} width={chartW} height={chartH} />
             </clipPath>
           </defs>
+
+          {/* No-candles notice — rectangles still render */}
+          {!candles.length && (
+            <text x={chartW / 2} y={chartH / 2} textAnchor="middle"
+              fill="#374151" fontSize={11} fontFamily="monospace">
+              Zones from prior session — candles load at market open
+            </text>
+          )}
 
           <g clipPath="url(#chart-clip)">
             {/* Price grid */}
